@@ -1,0 +1,8 @@
+# Auto-Grader — Python dependencies
+# Install: pip install -r requirements.txt  (preferably inside a virtual environment)
+
+pdf2image>=1.17.0
+pytesseract>=0.3.13
+numpy>=1.24.0
+img2pdf>=0.6.0
+Pillow>=10.0.0

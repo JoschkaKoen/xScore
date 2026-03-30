@@ -1,0 +1,9 @@
+# Local / generated
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# PDF scans and processed output (not tracked)
+Space Physics Unit Test Scans/
+output/
