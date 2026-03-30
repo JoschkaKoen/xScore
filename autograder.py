@@ -5,10 +5,10 @@ fix_scanned_pdf.py
 Cleans up scanned exam PDFs by:
   1. Auto-rotating pages to upright orientation (via Tesseract OSD)
   2. Removing blank/white pages
-  3. Saving the result as a new PDF
+  3. Saving the result as a new PDF (preserving original image data)
 
 Requirements:
-    pip install pdf2image pytesseract numpy img2pdf Pillow
+    pip install pdf2image pytesseract numpy pikepdf Pillow
     apt install tesseract-ocr poppler-utils   # or brew install on macOS
 
 
@@ -18,17 +18,15 @@ Requirements:
 
 Usage:
     python fix_scanned_pdf.py input.pdf output.pdf
-    python fix_scanned_pdf.py input.pdf output.pdf --dpi 200 --blank-threshold 250 --blank-std 5
+    python fix_scanned_pdf.py input.pdf output.pdf --dpi 300 --blank-threshold 250 --blank-std 5
 """
 
 import argparse
-import io
-import re
 import sys
 from pathlib import Path
 
 import numpy as np
-import img2pdf
+import pikepdf
 import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
@@ -38,9 +36,9 @@ from PIL import Image
 # Configuration defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_DPI = 150           # Render resolution. 150 is fast; use 200-300 for quality.
+ANALYSIS_DPI = 300          # DPI for rendering pages for OSD / blank detection only.
 BLANK_MEAN_THRESHOLD = 250  # Pages with grayscale mean above this are considered blank (0-255)
-BLANK_STD_THRESHOLD = 5     # Pages with grayscale std below this are considered blank
+BLANK_STD_THRESHOLD = 6     # Pages with grayscale std below this are considered blank
 
 
 # ---------------------------------------------------------------------------
@@ -53,14 +51,13 @@ def detect_rotation(image: Image.Image) -> int:
     rotated to appear upright.
 
     Returns one of: 0, 90, 180, 270
-    Returns 0 if detection fails (e.g. nearly blank page with no text).
+    Returns 0 if detection fails or confidence is too low.
     """
     try:
         osd = pytesseract.image_to_osd(image, output_type=pytesseract.Output.DICT)
         angle = int(osd.get("rotate", 0))
         confidence = float(osd.get("orientation_conf", 0))
 
-        # Low confidence means Tesseract is guessing — don't rotate
         if confidence < 2.0:
             print(f"    OSD confidence too low ({confidence:.1f}), keeping as-is")
             return 0
@@ -89,17 +86,9 @@ def is_blank_page(image: Image.Image,
     return blank
 
 
-def pil_to_pdf_bytes(image: Image.Image) -> bytes:
-    """Convert a PIL image to JPEG bytes suitable for img2pdf."""
-    buf = io.BytesIO()
-    # Convert to RGB — img2pdf doesn't accept RGBA or palette modes
-    image.convert("RGB").save(buf, format="JPEG", quality=95)
-    return buf.getvalue()
-
-
 def process_pdf(input_path: str,
                 output_path: str,
-                dpi: int = DEFAULT_DPI,
+                analysis_dpi: int = ANALYSIS_DPI,
                 blank_mean: float = BLANK_MEAN_THRESHOLD,
                 blank_std: float = BLANK_STD_THRESHOLD) -> None:
 
@@ -110,46 +99,62 @@ def process_pdf(input_path: str,
         print(f"ERROR: Input file not found: {input_path}")
         sys.exit(1)
 
-    print(f"\nRendering pages from: {input_path}")
-    print(f"DPI: {dpi}  |  Blank thresholds: mean≥{blank_mean}, std≤{blank_std}\n")
+    print(f"\nProcessing: {input_path}")
+    print(f"Analysis DPI: {analysis_dpi}  |  Blank thresholds: mean≥{blank_mean}, std≤{blank_std}\n")
 
-    pages = convert_from_path(str(input_path), dpi=dpi)
-    print(f"Total pages in input: {len(pages)}\n")
+    # Open the original PDF — we will copy/rotate pages without re-encoding
+    src_pdf = pikepdf.open(str(input_path))
+    total_pages = len(src_pdf.pages)
 
-    processed_images = []
+    # Render pages at analysis DPI only for blank/orientation detection
+    rendered = convert_from_path(str(input_path), dpi=analysis_dpi)
+    print(f"Total pages in input: {total_pages}\n")
 
-    for i, page_img in enumerate(pages):
+    out_pdf = pikepdf.new()
+    kept = 0
+
+    for i, page_img in enumerate(rendered):
         page_num = i + 1
-        print(f"Page {page_num}/{len(pages)}")
+        print(f"Page {page_num}/{total_pages}")
 
         # --- Blank page check ---
         if is_blank_page(page_img, blank_mean, blank_std):
             print(f"  → Removing blank page\n")
             continue
 
-        # --- Orientation correction ---
+        # --- Orientation detection ---
         angle = detect_rotation(page_img)
+
+        # Copy the original page (preserves embedded images byte-for-byte)
+        src_page = src_pdf.pages[i]
+
         if angle != 0:
-            # PIL rotate: positive = CCW, expand=True adjusts canvas for 90/270
-            page_img = page_img.rotate(angle, expand=True)
-            print(f"  → Rotated {angle}° CCW")
+            # Apply rotation at the PDF level via /Rotate attribute.
+            # pdf2image already applies the existing /Rotate when rendering,
+            # so Tesseract's angle is relative to the currently-displayed view.
+            # PDF /Rotate is clockwise; Tesseract's angle is CCW correction needed.
+            # Adding the CCW angle as a CW value to /Rotate achieves the correction.
+            existing_rotate = int(src_page.get("/Rotate", 0))
+            new_rotate = (existing_rotate + angle) % 360
+            src_page["/Rotate"] = new_rotate
+            print(f"  → Set PDF /Rotate to {new_rotate}° (was {existing_rotate}°)")
         else:
             print(f"  → No rotation needed")
 
-        processed_images.append(page_img)
+        out_pdf.pages.append(src_page)
+        kept += 1
         print()
 
-    if not processed_images:
+    if kept == 0:
         print("WARNING: All pages were removed (all blank?). Nothing to save.")
         sys.exit(1)
 
-    print(f"Pages retained: {len(processed_images)}/{len(pages)}")
+    print(f"Pages retained: {kept}/{total_pages}")
     print(f"Saving to: {output_path}")
 
-    # Convert PIL images → JPEG bytes → single PDF via img2pdf
-    jpeg_pages = [pil_to_pdf_bytes(img) for img in processed_images]
-    with open(output_path, "wb") as f:
-        f.write(img2pdf.convert(jpeg_pages))
+    out_pdf.save(str(output_path))
+    out_pdf.close()
+    src_pdf.close()
 
     print("Done.\n")
 
@@ -164,8 +169,8 @@ def main():
     )
     parser.add_argument("input",  help="Path to input PDF")
     parser.add_argument("output", help="Path for output PDF")
-    parser.add_argument("--dpi",  type=int,   default=DEFAULT_DPI,
-                        help=f"Render DPI (default: {DEFAULT_DPI})")
+    parser.add_argument("--dpi",  type=int,   default=ANALYSIS_DPI,
+                        help=f"Analysis render DPI for OSD/blank detection (default: {ANALYSIS_DPI})")
     parser.add_argument("--blank-threshold", type=float, default=BLANK_MEAN_THRESHOLD,
                         help=f"Grayscale mean above which a page is blank (default: {BLANK_MEAN_THRESHOLD})")
     parser.add_argument("--blank-std", type=float, default=BLANK_STD_THRESHOLD,
@@ -175,7 +180,7 @@ def main():
     process_pdf(
         input_path=args.input,
         output_path=args.output,
-        dpi=args.dpi,
+        analysis_dpi=args.dpi,
         blank_mean=args.blank_threshold,
         blank_std=args.blank_std,
     )
