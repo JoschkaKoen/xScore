@@ -4,10 +4,10 @@ extract_answers.py
 ------------------
 Extracts student names + handwritten answers (Q38, Q39, Q40) from scanned IGCSE
 answer sheets using Gemini Vision. Processes each page, crops the top half, and
-saves results to JSON + CSV.
+saves results to JSON and a compiled PDF report.
 
 Requirements:
-    pip install google-generativeai pdf2image pillow python-dotenv typing_extensions
+    pip install google-genai pdf2image pillow python-dotenv pydantic
     brew install poppler   # macOS
 
     cd /Users/joschka/Desktop/Programming/Auto-Grader
@@ -24,11 +24,12 @@ import subprocess
 import time
 from pathlib import Path
 
-import typing_extensions as typing
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 from pdf2image import convert_from_path
+from pydantic import BaseModel
 from PIL import Image
-import google.generativeai as genai
 
 # ---------------------------------------------------------------------------
 # Load .env
@@ -40,17 +41,13 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 DEFAULT_PDF = "output/20260330135527722.pdf"
-OUTPUT_JSON = Path("student_answers_report.json")
-OUTPUT_TEX = Path("student_answers_report.tex")
-OUTPUT_REPORT = Path("student_answers_report.pdf")
-DEBUG_IMAGE_DIR = Path("debug_crops")
 SAVE_DEBUG_IMAGES = True
 
-PDF_DPI = 300
+PDF_DPI = 300  # 150 DPI is sufficient for Gemini to read handwritten letters and names
 JPEG_QUALITY = 95
 CROP_TOP_FRACTION = 0.5
 
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-3-flash-preview"
 API_CALL_DELAY_S = 1.5
 MAX_RETRIES = 3
 RETRY_BACKOFF_S = 5
@@ -60,13 +57,14 @@ RETRY_BACKOFF_S = 5
 # Structured output schema — enforced at the token level by Gemini
 # ---------------------------------------------------------------------------
 
-class StudentAnswers(typing.TypedDict):
+class StudentAnswers(BaseModel):
     student_name: str
-    q38_left: str   # exactly one of: A, B, C, D, or ? if illegible
-    q39_left: str
-    q40_left: str
-    q39_right: str
-    q40_right: str
+    q38_left_top: str    # left side, position 1 (top)     — Q38
+    q39_left: str        # left side, position 2           — Q39
+    q40_left: str        # left side, position 3           — Q40
+    q38_left_bottom: str # left side, position 4 (bottom)  — Q38 again
+    q39_right: str       # right side, position 1 (top)    — Q39
+    q40_right: str       # right side, position 2          — Q40
     confidence: str
 
 
@@ -75,13 +73,14 @@ You are reading a scanned student exam answer sheet for a multiple-choice test.
 Each student circles or writes a single letter — A, B, C, or D — for each question.
 
 On the LEFT side of the page (in order from top to bottom):
-  - Question 38 answer
-  - Question 39 answer
-  - Question 40 answer
+  - Question 38 answer  → field: q38_left_top
+  - Question 39 answer  → field: q39_left
+  - Question 40 answer  → field: q40_left
+  - Question 38 answer  → field: q38_left_bottom  (Q38 appears a second time at the bottom)
 
 On the RIGHT side of the page (in order from top to bottom):
-  - Question 39 answer
-  - Question 40 answer
+  - Question 39 answer  → field: q39_right
+  - Question 40 answer  → field: q40_right
 
 At the TOP of the page, the student has written their name in English.
 
@@ -110,26 +109,54 @@ def to_jpeg_bytes(image: Image.Image, quality: int = JPEG_QUALITY) -> bytes:
     return buf.getvalue()
 
 
-def call_gemini(model, image_bytes: bytes, page_num: int) -> dict:
-    """Call Gemini Vision with structured output + retry + exponential backoff."""
+def call_gemini(client: genai.Client, image_bytes: bytes, page_num: int) -> dict:
+    """Call Gemini Vision with structured output + retry + exponential backoff.
+
+    Config follows ``google.genai.types.GenerateContentConfig`` (see installed
+    ``google-genai`` package). For models with *thinking* enabled, internal
+    reasoning can consume ``max_output_tokens``; ``ThinkingConfig`` documents
+    ``thinking_budget=0`` as DISABLED so the budget applies to the visible
+    JSON response (avoids ``FinishReason.MAX_TOKENS`` on a few dozen chars).
+    """
     last_error = None
     backoff = RETRY_BACKOFF_S
 
+    # Typed config matches the API surface in types.GenerateContentConfig / TypedDict.
+    gen_config = types.GenerateContentConfig(
+        temperature=0,
+        max_output_tokens=16384,
+        response_mime_type="application/json",
+        response_schema=StudentAnswers,
+        thinking_config=types.ThinkingConfig(thinking_budget=-1),  # -1 = AUTOMATIC
+    )
+
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = model.generate_content(
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
                 contents=[
-                    {"mime_type": "image/jpeg", "data": image_bytes},
+                    types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
                     PROMPT,
                 ],
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0,
-                    max_output_tokens=1024,
-                    response_mime_type="application/json",
-                    response_schema=StudentAnswers,
-                ),
+                config=gen_config,
             )
-            return json.loads(response.text)
+            # Log finish reason and full raw text to help diagnose truncation
+            try:
+                finish_reason = response.candidates[0].finish_reason
+            except (IndexError, AttributeError):
+                finish_reason = "unknown"
+            if response.parsed:
+                return response.parsed.model_dump()
+            raw = response.text or ""
+            print(f"\n    [DEBUG] finish_reason={finish_reason}")
+            print(f"    [DEBUG] full response ({len(raw)} chars):\n{raw}\n")
+            try:
+                return json.loads(raw)
+            except (json.JSONDecodeError, ValueError) as parse_err:
+                raise RuntimeError(
+                    f"Unparseable response for page {page_num} "
+                    f"(finish_reason={finish_reason})"
+                ) from parse_err
 
         except Exception as e:
             print(f"    API error (attempt {attempt}/{MAX_RETRIES}): {e}")
@@ -142,9 +169,10 @@ def call_gemini(model, image_bytes: bytes, page_num: int) -> dict:
 
     return {
         "student_name": "EXTRACTION_ERROR",
-        "q38_left": "",
+        "q38_left_top": "",
         "q39_left": "",
         "q40_left": "",
+        "q38_left_bottom": "",
         "q39_right": "",
         "q40_right": "",
         "confidence": "failed",
@@ -152,19 +180,23 @@ def call_gemini(model, image_bytes: bytes, page_num: int) -> dict:
     }
 
 
-def load_existing_results() -> dict[int, dict]:
+def load_existing_results(output_json: Path) -> dict[int, dict]:
     """Load existing JSON results so we can resume an interrupted run."""
-    if OUTPUT_JSON.exists():
-        with open(OUTPUT_JSON, encoding="utf-8") as f:
+    if not output_json.exists():
+        return {}
+    try:
+        with open(output_json, encoding="utf-8") as f:
             records = json.load(f)
-        return {r["page_number"]: r for r in records}
-    return {}
+        return {r["page_number"]: r for r in records if "page_number" in r}
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        print(f"WARNING: Could not parse existing results from {output_json} ({e}), starting fresh.")
+        return {}
 
 
-def save_results(results: list[dict]):
+def save_results(results: list[dict], output_json: Path) -> None:
     """Persist current results to JSON."""
-    sorted_results = sorted(results, key=lambda r: r["page_number"])
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
+    sorted_results = sorted(results, key=lambda r: r.get("page_number", 0))
+    with open(output_json, "w", encoding="utf-8") as f:
         json.dump(sorted_results, f, indent=2, ensure_ascii=False)
 
 
@@ -181,19 +213,21 @@ def _tex_escape(text: str) -> str:
     return text
 
 
-def generate_report_pdf(results: list[dict]):
+def generate_report_pdf(results: list[dict], output_tex: Path, output_report: Path) -> None:
     """Generate a LaTeX table and compile to PDF."""
-    sorted_results = sorted(results, key=lambda r: r["page_number"])
+    sorted_results = sorted(results, key=lambda r: r.get("page_number", 0))
 
     rows = []
     for r in sorted_results:
+        page_num = r.get("page_number", "?")
         name = _tex_escape(r.get("student_name", "UNKNOWN"))
-        q38l = _tex_escape(r.get("q38_left", "?"))
-        q39l = _tex_escape(r.get("q39_left", "?"))
-        q40l = _tex_escape(r.get("q40_left", "?"))
-        q39r = _tex_escape(r.get("q39_right", "?"))
-        q40r = _tex_escape(r.get("q40_right", "?"))
-        rows.append(f"        {r['page_number']} & {name} & {q38l} & {q39l} & {q40l} & {q39r} & {q40r} \\\\")
+        q38lt = _tex_escape(r.get("q38_left_top", "?"))
+        q39l  = _tex_escape(r.get("q39_left", "?"))
+        q40l  = _tex_escape(r.get("q40_left", "?"))
+        q38lb = _tex_escape(r.get("q38_left_bottom", "?"))
+        q39r  = _tex_escape(r.get("q39_right", "?"))
+        q40r  = _tex_escape(r.get("q40_right", "?"))
+        rows.append(f"        {page_num} & {name} & {q38lt} & {q39l} & {q40l} & {q38lb} & {q39r} & {q40r} \\\\")
 
     table_rows = "\n".join(rows)
 
@@ -203,6 +237,9 @@ def generate_report_pdf(results: list[dict]):
 \\usepackage{{booktabs}}
 \\usepackage{{longtable}}
 \\usepackage{{array}}
+\\usepackage{{fontspec}}
+\\usepackage{{xeCJK}}
+\\setCJKmainfont{{PingFang SC Regular}}[BoldFont=PingFang SC Semibold]
 
 \\title{{Student Answers Report}}
 \\author{{Auto-Grader}}
@@ -211,9 +248,9 @@ def generate_report_pdf(results: list[dict]):
 \\begin{{document}}
 \\maketitle
 
-\\begin{{longtable}}{{r l c c c c c}}
+\\begin{{longtable}}{{r l c c c c c c}}
     \\toprule
-    \\textbf{{Page}} & \\textbf{{Student Name}} & \\textbf{{Q38 (L)}} & \\textbf{{Q39 (L)}} & \\textbf{{Q40 (L)}} & \\textbf{{Q39 (R)}} & \\textbf{{Q40 (R)}} \\\\
+    \\textbf{{Page}} & \\textbf{{Student Name}} & \\textbf{{Q38 L↑}} & \\textbf{{Q39 L}} & \\textbf{{Q40 L}} & \\textbf{{Q38 L↓}} & \\textbf{{Q39 R}} & \\textbf{{Q40 R}} \\\\
     \\midrule
     \\endhead
 {table_rows}
@@ -223,23 +260,23 @@ def generate_report_pdf(results: list[dict]):
 \\end{{document}}
 """
 
-    with open(OUTPUT_TEX, "w", encoding="utf-8") as f:
+    with open(output_tex, "w", encoding="utf-8") as f:
         f.write(tex)
 
-    print(f"\nCompiling LaTeX -> {OUTPUT_REPORT} ...")
+    print(f"\nCompiling LaTeX -> {output_report} ...")
     result = subprocess.run(
-        ["pdflatex", "-interaction=nonstopmode", str(OUTPUT_TEX)],
+        ["xelatex", "-interaction=nonstopmode", str(output_tex)],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
-        print(f"  LaTeX compilation failed. Check {OUTPUT_TEX} for errors.")
+        print(f"  LaTeX compilation failed. Check {output_tex} for errors.")
         print(result.stdout[-500:] if result.stdout else "")
     else:
-        print(f"  Report generated: {OUTPUT_REPORT}")
+        print(f"  Report generated: {output_report}")
 
     # Clean up LaTeX auxiliary files
     for ext in (".aux", ".log", ".out"):
-        aux = OUTPUT_TEX.with_suffix(ext)
+        aux = output_tex.with_suffix(ext)
         if aux.exists():
             aux.unlink()
 
@@ -273,6 +310,8 @@ def main():
     )
     parser.add_argument("pdf", nargs="?", default=DEFAULT_PDF,
                         help=f"Path to input PDF (default: {DEFAULT_PDF})")
+    parser.add_argument("--skip", action="store_true", default=False,
+                        help="Skip pages already present in the resume JSON (default: off, re-process everything)")
     args = parser.parse_args()
 
     pdf_path = Path(args.pdf)
@@ -280,25 +319,41 @@ def main():
         print(f"ERROR: PDF not found: {pdf_path}")
         raise SystemExit(1)
 
-    api_key = os.getenv("GOOGLE_API_KEY")
+    # Derive per-PDF output paths from the input filename stem so that running
+    # on different PDFs does not mix up or overwrite each other's results.
+    stem = pdf_path.stem
+    output_json   = Path(f"{stem}_answers.json")
+    output_tex    = Path(f"{stem}_answers.tex")
+    output_report = Path(f"{stem}_answers.pdf")
+    debug_image_dir = Path(f"debug_crops_{stem}")
+
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
-        print("ERROR: Set GOOGLE_API_KEY in .env or environment.")
+        print("ERROR: Set GOOGLE_API_KEY (or GEMINI_API_KEY) in .env or environment.")
         raise SystemExit(1)
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(GEMINI_MODEL)
+    client = genai.Client(api_key=api_key)
 
     if SAVE_DEBUG_IMAGES:
-        DEBUG_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        debug_image_dir.mkdir(parents=True, exist_ok=True)
 
-    # Resume support
-    existing = load_existing_results()
+    # Resume support — only used when --skip is passed
+    existing = load_existing_results(output_json) if args.skip else {}
     if existing:
         print(f"Resuming -- {len(existing)} pages already done, skipping them.")
+    elif args.skip:
+        print("No existing results found, processing all pages.")
 
     print(f"Converting PDF to images at {PDF_DPI} DPI (this may take a minute)...")
-    pages = convert_from_path(str(pdf_path), dpi=PDF_DPI)
-    print(f"{len(pages)} pages found.\n")
+    t_pdf_to_images = time.perf_counter()
+    pages = convert_from_path(str(pdf_path), dpi=PDF_DPI, thread_count=os.cpu_count())
+    pdf_to_images_s = time.perf_counter() - t_pdf_to_images
+    n_pages = len(pages)
+    per_page = pdf_to_images_s / n_pages if n_pages else 0.0
+    print(
+        f"PDF→images ({PDF_DPI} DPI): {pdf_to_images_s:.2f}s total "
+        f"({per_page:.2f}s/page) — {n_pages} pages.\n"
+    )
 
     results_map: dict[int, dict] = dict(existing)
 
@@ -313,33 +368,34 @@ def main():
         img_bytes = to_jpeg_bytes(crop)
 
         if SAVE_DEBUG_IMAGES:
-            crop.save(DEBUG_IMAGE_DIR / f"page_{page_num:04d}.jpg", quality=85)
+            crop.save(debug_image_dir / f"page_{page_num:04d}.jpg", quality=85)
 
-        data = call_gemini(model, img_bytes, page_num)
+        data = call_gemini(client, img_bytes, page_num)
         data["page_number"] = page_num
         results_map[page_num] = data
 
         conf = data.get("confidence", "?")
         name = data.get("student_name", "?")
         marker = {"high": "OK", "medium": "??", "low": "!!", "failed": "XX"}.get(conf, "??")
-        q38l = data.get("q38_left", "?")
-        q39l = data.get("q39_left", "?")
-        q40l = data.get("q40_left", "?")
-        q39r = data.get("q39_right", "?")
-        q40r = data.get("q40_right", "?")
-        print(f" [{marker}] {name}  |  Q38:{q38l}  Q39L:{q39l}  Q40L:{q40l}  Q39R:{q39r}  Q40R:{q40r}")
+        q38lt = data.get("q38_left_top", "?")
+        q39l  = data.get("q39_left", "?")
+        q40l  = data.get("q40_left", "?")
+        q38lb = data.get("q38_left_bottom", "?")
+        q39r  = data.get("q39_right", "?")
+        q40r  = data.get("q40_right", "?")
+        print(f" [{marker}] {name}  |  Q38L↑:{q38lt}  Q39L:{q39l}  Q40L:{q40l}  Q38L↓:{q38lb}  Q39R:{q39r}  Q40R:{q40r}")
 
-        save_results(list(results_map.values()))
+        save_results(list(results_map.values()), output_json)
         time.sleep(API_CALL_DELAY_S)
 
     all_results = list(results_map.values())
     print_summary(all_results)
-    generate_report_pdf(all_results)
-    print(f"\nJSON  -> {OUTPUT_JSON}")
-    print(f"LaTeX -> {OUTPUT_TEX}")
-    print(f"PDF   -> {OUTPUT_REPORT}")
+    generate_report_pdf(all_results, output_tex, output_report)
+    print(f"\nJSON  -> {output_json}")
+    print(f"LaTeX -> {output_tex}")
+    print(f"PDF   -> {output_report}")
     if SAVE_DEBUG_IMAGES:
-        print(f"Crops -> {DEBUG_IMAGE_DIR}/")
+        print(f"Crops -> {debug_image_dir}/")
 
 
 if __name__ == "__main__":

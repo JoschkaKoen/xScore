@@ -4,7 +4,7 @@ CLI tool that cleans scanned exam PDFs by:
 
 1. **Auto-rotating** pages to upright orientation using Tesseract OSD  
 2. **Dropping** near-blank / white pages  
-3. **Writing** a new PDF (pages rendered as JPEG and assembled with `img2pdf`)
+3. **Writing** a new PDF (pages copied losslessly using `pikepdf`)
 
 ## Requirements
 

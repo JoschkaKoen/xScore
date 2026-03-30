@@ -11,3 +11,9 @@ __pycache__/
 # PDF scans and processed output (not tracked)
 Space Physics Unit Test Scans/
 output/
+
+# extract_answers outputs + debug crops
+*_answers.json
+*_answers.tex
+*_answers.pdf
+debug_crops*/

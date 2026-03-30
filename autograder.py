@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 """
-fix_scanned_pdf.py
-------------------
+autograder.py
+-------------
 Cleans up scanned exam PDFs by:
   1. Auto-rotating pages to upright orientation (via Tesseract OSD)
   2. Removing blank/white pages
-  3. Saving the result as a new PDF (preserving original image data)
+  3. Saving the result as a new PDF (pages copied losslessly via pikepdf)
 
 Requirements:
     pip install pdf2image pytesseract numpy pikepdf Pillow
     apt install tesseract-ocr poppler-utils   # or brew install on macOS
 
-
+Setup:
     cd /Users/joschka/Desktop/Programming/Auto-Grader
     source .venv/bin/activate
-    python autograder.py input.pdf output.pdf
 
 Usage:
-    python fix_scanned_pdf.py input.pdf output.pdf
-    python fix_scanned_pdf.py input.pdf output.pdf --dpi 300 --blank-threshold 250 --blank-std 6
+    python autograder.py input.pdf output.pdf
+    python autograder.py input.pdf output.pdf --dpi 300 --blank-threshold 250 --blank-std 6
 """
 
 import argparse
@@ -117,7 +116,7 @@ def process_pdf(input_path: str,
     # ------------------------------------------------------------------
     print(f"\nPass 1: Rendering all pages at {BLANK_DPI} DPI for blank detection...")
     low_res_pages = convert_from_path(str(input_path), dpi=BLANK_DPI,
-                                      grayscale=True, thread_count=4)
+                                          grayscale=True, thread_count=os.cpu_count() or 4)
     total_pages = len(low_res_pages)
     print(f"Total pages: {total_pages}")
 
@@ -181,7 +180,10 @@ def process_pdf(input_path: str,
         angle = rotation_map.get(pn, 0)
 
         if angle != 0:
-            existing_rotate = int(src_page.get("/Rotate", 0))
+            try:
+                existing_rotate = int(src_page.get("/Rotate", 0))
+            except (TypeError, ValueError):
+                existing_rotate = 0
             new_rotate = (existing_rotate + angle) % 360
             src_page["/Rotate"] = new_rotate
 
