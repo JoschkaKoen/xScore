@@ -23,6 +23,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
@@ -130,6 +131,14 @@ def calculate_student_accuracy(extracted: dict, gt_answers: list[str]) -> float:
     return (correct / total) * 100 if total > 0 else 0.0
 
 
+# ANSI color codes for terminal output
+class Colors:
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RESET = "\033[0m"
+
+
 def format_accuracy(acc: float) -> str:
     """Format accuracy as percentage string with color coding via ASCII."""
     if acc >= 80:
@@ -139,6 +148,18 @@ def format_accuracy(acc: float) -> str:
     else:
         return f"{acc:.0f}%"  # Poor
 
+
+def color_wrong_answer(value: str, gt_value: str) -> str:
+    """Return the value in red if it doesn't match ground truth, green if correct."""
+    val_upper = value.upper().strip() if value else ""
+    gt_upper = gt_value.upper().strip() if gt_value else ""
+    
+    if not val_upper or val_upper == "?":
+        return f"{Colors.RED}{value}{Colors.RESET}"
+    if val_upper == gt_upper:
+        return f"{Colors.GREEN}{value}{Colors.RESET}"
+    return f"{Colors.RED}{value}{Colors.RESET}"
+
 # ---------------------------------------------------------------------------
 # Configuration defaults
 # ---------------------------------------------------------------------------
@@ -146,9 +167,44 @@ def format_accuracy(acc: float) -> str:
 DEFAULT_PDF = "output/20260330135527722.pdf"
 SAVE_DEBUG_IMAGES = True
 
-PDF_DPI = 300  # 150 DPI is sufficient for Gemini to read handwritten letters and names
+PDF_DPI = 400  # 150 DPI is sufficient for Gemini to read handwritten letters and names
 JPEG_QUALITY = 95
 CROP_TOP_FRACTION = 0.5
+
+
+def effective_crop_fraction() -> float:
+    """Optional override via ``EXTRACT_CROP_FRACTION`` (e.g. 0.55) for eval tuning."""
+    raw = os.getenv("EXTRACT_CROP_FRACTION", "").strip()
+    if not raw:
+        return CROP_TOP_FRACTION
+    try:
+        v = float(raw)
+        return max(0.2, min(1.0, v))
+    except ValueError:
+        return CROP_TOP_FRACTION
+
+
+def normalize_mc_answer(val: Any) -> str:
+    """Coerce model output to a single ``A``/``B``/``C``/``D`` or ``?``."""
+    if val is None:
+        return "?"
+    s = str(val).upper().strip()
+    if not s or s == "?":
+        return "?"
+    letters = [c for c in s if c in "ABCD"]
+    if not letters:
+        return "?"
+    if len(set(letters)) > 1:
+        return "?"
+    return letters[0]
+
+
+def normalize_extracted_record(data: dict) -> dict:
+    """Normalize all six MC fields in place (and return ``data``)."""
+    for field in ANSWER_FIELDS:
+        if field in data:
+            data[field] = normalize_mc_answer(data.get(field))
+    return data
 
 # Gemini 3 Pro Preview is deprecated (shut down); use 3.1 Pro Preview per
 # https://ai.google.dev/gemini-api/docs/models
@@ -275,6 +331,11 @@ For student names:
    - MEDIUM: Most fields clear, 1-2 minor uncertainties
    - LOW: Multiple uncertainties or poor image quality
 
+5. Spatial order check:
+   - On the LEFT column, read from TOP to bottom: Q38 (top), Q39, Q40, then Q38 again (bottom).
+   - On the RIGHT column, read from TOP to bottom: Q39, then Q40.
+   - Do not swap left/right columns or reorder questions.
+
 === EXAMPLES ===
 Example 1 - Clear answer:
   [Image shows dark circle around letter B]
@@ -352,12 +413,12 @@ def call_gemini(client: genai.Client, image_bytes: bytes, page_num: int) -> dict
             except (IndexError, AttributeError):
                 finish_reason = "unknown"
             if response.parsed:
-                return response.parsed.model_dump()
+                return normalize_extracted_record(response.parsed.model_dump())
             raw = response.text or ""
             print(f"\n    [DEBUG] finish_reason={finish_reason}")
             print(f"    [DEBUG] full response ({len(raw)} chars):\n{raw}\n")
             try:
-                return json.loads(raw)
+                return normalize_extracted_record(json.loads(raw))
             except (json.JSONDecodeError, ValueError) as parse_err:
                 raise RuntimeError(
                     f"Unparseable response for page {page_num} "
@@ -373,24 +434,26 @@ def call_gemini(client: genai.Client, image_bytes: bytes, page_num: int) -> dict
             time.sleep(backoff)
             backoff *= 2
 
-    return {
-        "student_name": "EXTRACTION_ERROR",
-        "student_name_confidence": "failed",
-        "q38_left_top": "",
-        "q38_left_top_confidence": "failed",
-        "q39_left": "",
-        "q39_left_confidence": "failed",
-        "q40_left": "",
-        "q40_left_confidence": "failed",
-        "q38_left_bottom": "",
-        "q38_left_bottom_confidence": "failed",
-        "q39_right": "",
-        "q39_right_confidence": "failed",
-        "q40_right": "",
-        "q40_right_confidence": "failed",
-        "confidence": "failed",
-        "error": str(last_error),
-    }
+    return normalize_extracted_record(
+        {
+            "student_name": "EXTRACTION_ERROR",
+            "student_name_confidence": "failed",
+            "q38_left_top": "?",
+            "q38_left_top_confidence": "failed",
+            "q39_left": "?",
+            "q39_left_confidence": "failed",
+            "q40_left": "?",
+            "q40_left_confidence": "failed",
+            "q38_left_bottom": "?",
+            "q38_left_bottom_confidence": "failed",
+            "q39_right": "?",
+            "q39_right_confidence": "failed",
+            "q40_right": "?",
+            "q40_right_confidence": "failed",
+            "confidence": "failed",
+            "error": str(last_error),
+        }
+    )
 
 
 def load_existing_results(output_json: Path) -> dict[int, dict]:
@@ -542,6 +605,212 @@ def print_summary(results: list[dict], ground_truth: dict[str, list[str]] | None
     print(f"{'=' * 60}")
 
 
+def extract_first_n_students_eval(
+    pdf_path: Path,
+    n: int = 12,
+    *,
+    ground_truth: dict[str, list[str]] | None = None,
+    gt_path: Path | None = None,
+    client: genai.Client | None = None,
+    api_key: str | None = None,
+    verbose: bool = True,
+    save_results_path: Path | None = None,
+    debug_image_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Extract answers from the first *n* PDF pages (one student per page), compare to ground truth.
+
+    Returns a dict with ``students`` (per-page evaluation) and ``summary`` (cumulative accuracy).
+    Does not write the normal ``{stem}_answers.json`` unless ``save_results_path`` is set.
+    """
+    pdf_path = Path(pdf_path)
+    if not pdf_path.exists():
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+    if n <= 0:
+        return {
+            "n_requested": n,
+            "n_processed": 0,
+            "pdf": str(pdf_path.resolve()),
+            "students": [],
+            "summary": {
+                "cumulative_correct": 0,
+                "cumulative_total": 0,
+                "cumulative_accuracy_pct": 0.0,
+            },
+        }
+
+    gt = ground_truth if ground_truth is not None else load_ground_truth(gt_path or GROUND_TRUTH_PATH)
+    gt_names = list(gt.keys())
+
+    if client is None:
+        key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError("Set GOOGLE_API_KEY or GEMINI_API_KEY, or pass api_key= / client=.")
+        client = genai.Client(api_key=key)
+
+    if verbose and gt:
+        print(f"Ground truth loaded: {len(gt)} students ({', '.join(gt_names)})")
+
+    if verbose:
+        print(f"Converting PDF to images at {PDF_DPI} DPI (pages 1–{n} only)...")
+    t0 = time.perf_counter()
+    pages = convert_from_path(
+        str(pdf_path),
+        dpi=PDF_DPI,
+        thread_count=os.cpu_count() or 4,
+        first_page=1,
+        last_page=n,
+    )
+    elapsed = time.perf_counter() - t0
+    if verbose:
+        print(f"PDF→images ({PDF_DPI} DPI): {elapsed:.2f}s — {len(pages)} page(s).\n")
+
+    if debug_image_dir is None and SAVE_DEBUG_IMAGES:
+        debug_image_dir = Path(f"debug_crops_{pdf_path.stem}_first{n}")
+    if debug_image_dir and SAVE_DEBUG_IMAGES:
+        debug_image_dir.mkdir(parents=True, exist_ok=True)
+
+    cumulative_correct = 0
+    cumulative_total = 0
+    student_rows: list[dict[str, Any]] = []
+
+    for page_num, page in enumerate(pages, start=1):
+        if verbose:
+            print(f"  Page {page_num:3d}/{len(pages)} -- extracting...", end="", flush=True)
+
+        crop = crop_top(page, effective_crop_fraction())
+        img_bytes = to_jpeg_bytes(crop)
+        if debug_image_dir and SAVE_DEBUG_IMAGES:
+            crop.save(debug_image_dir / f"page_{page_num:04d}.jpg", quality=85)
+
+        data = call_gemini(client, img_bytes, page_num)
+        data["page_number"] = page_num
+
+        name = data.get("student_name", "?")
+        conf = data.get("confidence", "?")
+        marker = {"high": "OK", "medium": "??", "low": "!!", "failed": "XX"}.get(conf, "??")
+        nc = (
+            (data.get("student_name_confidence") or "?")[0].upper()
+            if data.get("student_name_confidence")
+            else "?"
+        )
+        c38lt = (data.get("q38_left_top_confidence") or "?")[0].upper() if data.get("q38_left_top_confidence") else "?"
+        c39l = (data.get("q39_left_confidence") or "?")[0].upper() if data.get("q39_left_confidence") else "?"
+        c40l = (data.get("q40_left_confidence") or "?")[0].upper() if data.get("q40_left_confidence") else "?"
+        c38lb = (data.get("q38_left_bottom_confidence") or "?")[0].upper() if data.get("q38_left_bottom_confidence") else "?"
+        c39r = (data.get("q39_right_confidence") or "?")[0].upper() if data.get("q39_right_confidence") else "?"
+        c40r = (data.get("q40_right_confidence") or "?")[0].upper() if data.get("q40_right_confidence") else "?"
+
+        q38lt_raw = data.get("q38_left_top", "?")
+        q39l_raw = data.get("q39_left", "?")
+        q40l_raw = data.get("q40_left", "?")
+        q38lb_raw = data.get("q38_left_bottom", "?")
+        q39r_raw = data.get("q39_right", "?")
+        q40r_raw = data.get("q40_right", "?")
+
+        matched: str | None = None
+        gt_answers: list[str] | None = None
+        per_field: list[dict[str, Any]] = []
+        acc_here = 0.0
+        student_acc_str = "N/A"
+        cumulative_acc_str = "N/A"
+
+        q38lt, q39l, q40l, q38lb, q39r, q40r = q38lt_raw, q39l_raw, q40l_raw, q38lb_raw, q39r_raw, q40r_raw
+
+        if gt and name not in ("UNKNOWN", "EXTRACTION_ERROR", "?"):
+            matched = fuzzy_match_name(name, gt_names)
+            if matched:
+                gt_answers = gt[matched]
+                # Pad short GT rows so color_wrong_answer / display never index out of range
+                gt_pad = list(gt_answers) + [""] * len(ANSWER_FIELDS)
+                gt_pad = gt_pad[: len(ANSWER_FIELDS)]
+                for i, field in enumerate(ANSWER_FIELDS):
+                    ex = data.get(field, "?")
+                    gv = gt_pad[i]
+                    eu = str(ex).upper().strip()
+                    gu = gv.upper().strip()
+                    ok = eu == gu and eu not in ("", "?")
+                    per_field.append(
+                        {"field": field, "extracted": ex, "ground_truth": gv, "correct": ok}
+                    )
+                    cumulative_total += 1
+                    if ok:
+                        cumulative_correct += 1
+
+                q38lt = color_wrong_answer(q38lt_raw, gt_pad[0])
+                q39l = color_wrong_answer(q39l_raw, gt_pad[1])
+                q40l = color_wrong_answer(q40l_raw, gt_pad[2])
+                q38lb = color_wrong_answer(q38lb_raw, gt_pad[3])
+                q39r = color_wrong_answer(q39r_raw, gt_pad[4])
+                q40r = color_wrong_answer(q40r_raw, gt_pad[5])
+
+                acc_here = calculate_student_accuracy(data, gt_pad)
+                student_acc_str = format_accuracy(acc_here)
+                cum_pct = (cumulative_correct / cumulative_total * 100) if cumulative_total else 0.0
+                cumulative_acc_str = format_accuracy(cum_pct)
+                data["student_accuracy"] = acc_here
+                data["matched_ground_truth_name"] = matched
+
+        student_rows.append(
+            {
+                "page_number": page_num,
+                "extracted": data,
+                "matched_ground_truth_name": matched,
+                "ground_truth_answers": gt_answers,
+                "per_field": per_field,
+                "accuracy_here_pct": acc_here,
+            }
+        )
+
+        if verbose:
+            print(
+                f" [{marker}] {name}({nc})  |  Q38L↑:{q38lt}({c38lt})  Q39L:{q39l}({c39l})  "
+                f"Q40L:{q40l}({c40l})  Q38L↓:{q38lb}({c38lb})  Q39R:{q39r}({c39r})  Q40R:{q40r}({c40r})  "
+                f"|  Acc here: {student_acc_str} / Cum: {cumulative_acc_str}{Colors.RESET}"
+            )
+
+        time.sleep(API_CALL_DELAY_S)
+
+    cum_pct = (cumulative_correct / cumulative_total * 100) if cumulative_total else 0.0
+    out: dict[str, Any] = {
+        "n_requested": n,
+        "n_processed": len(pages),
+        "pdf": str(pdf_path.resolve()),
+        "students": student_rows,
+        "summary": {
+            "cumulative_correct": cumulative_correct,
+            "cumulative_total": cumulative_total,
+            "cumulative_accuracy_pct": round(cum_pct, 2),
+        },
+    }
+
+    if save_results_path:
+        # Strip ANSI from nested dicts for JSON (save raw extracted only in students)
+        serializable = {
+            "n_requested": out["n_requested"],
+            "n_processed": out["n_processed"],
+            "pdf": out["pdf"],
+            "summary": out["summary"],
+            "students": [
+                {
+                    "page_number": s["page_number"],
+                    "extracted": {k: v for k, v in s["extracted"].items() if k != "error"},
+                    "matched_ground_truth_name": s["matched_ground_truth_name"],
+                    "ground_truth_answers": s["ground_truth_answers"],
+                    "per_field": s["per_field"],
+                    "accuracy_here_pct": s["accuracy_here_pct"],
+                }
+                for s in student_rows
+            ],
+        }
+        save_results_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(save_results_path, "w", encoding="utf-8") as f:
+            json.dump(serializable, f, indent=2, ensure_ascii=False)
+        if verbose:
+            print(f"\nEval JSON saved -> {save_results_path}")
+
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -554,9 +823,44 @@ def main():
                         help=f"Path to input PDF (default: {DEFAULT_PDF})")
     parser.add_argument("--skip", action="store_true", default=False,
                         help="Skip pages already present in the resume JSON (default: off, re-process everything)")
+    parser.add_argument(
+        "--first-students",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Only process the first N pages: extract, compare to ground truth, print summary, then exit.",
+    )
     args = parser.parse_args()
 
     pdf_path = Path(args.pdf)
+
+    if args.first_students > 0:
+        if not pdf_path.exists():
+            print(f"ERROR: PDF not found: {pdf_path}")
+            raise SystemExit(1)
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("ERROR: Set GOOGLE_API_KEY (or GEMINI_API_KEY) in .env or environment.")
+            raise SystemExit(1)
+        if os.getenv("GOOGLE_API_KEY") and os.getenv("GEMINI_API_KEY"):
+            print("Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.")
+        client = genai.Client(api_key=api_key)
+        stem = pdf_path.stem
+        eval_json = Path(f"{stem}_first{args.first_students}_eval.json")
+        result = extract_first_n_students_eval(
+            pdf_path,
+            n=args.first_students,
+            client=client,
+            save_results_path=eval_json,
+            verbose=True,
+        )
+        print(
+            f"\nEval summary: {result['summary']['cumulative_correct']}/"
+            f"{result['summary']['cumulative_total']} correct "
+            f"({result['summary']['cumulative_accuracy_pct']:.1f}%)"
+        )
+        raise SystemExit(0)
+
     if not pdf_path.exists():
         print(f"ERROR: PDF not found: {pdf_path}")
         raise SystemExit(1)
@@ -619,7 +923,7 @@ def main():
 
         print(f"  Page {page_num:3d}/{len(pages)} -- extracting...", end="", flush=True)
 
-        crop = crop_top(page, CROP_TOP_FRACTION)
+        crop = crop_top(page, effective_crop_fraction())
         img_bytes = to_jpeg_bytes(crop)
 
         if SAVE_DEBUG_IMAGES:
@@ -632,12 +936,13 @@ def main():
         conf = data.get("confidence", "?")
         name = data.get("student_name", "?")
         marker = {"high": "OK", "medium": "??", "low": "!!", "failed": "XX"}.get(conf, "??")
-        q38lt = data.get("q38_left_top", "?")
-        q39l  = data.get("q39_left", "?")
-        q40l  = data.get("q40_left", "?")
-        q38lb = data.get("q38_left_bottom", "?")
-        q39r  = data.get("q39_right", "?")
-        q40r  = data.get("q40_right", "?")
+        q38lt_raw = data.get("q38_left_top", "?")
+        q39l_raw  = data.get("q39_left", "?")
+        q40l_raw  = data.get("q40_left", "?")
+        q38lb_raw = data.get("q38_left_bottom", "?")
+        q39r_raw  = data.get("q39_right", "?")
+        q40r_raw  = data.get("q40_right", "?")
+        
         # Per-field confidence indicators
         nc = data.get("student_name_confidence", "?")[0].upper() if data.get("student_name_confidence") else "?"
         c38lt = data.get("q38_left_top_confidence", "?")[0].upper() if data.get("q38_left_top_confidence") else "?"
@@ -647,15 +952,28 @@ def main():
         c39r = data.get("q39_right_confidence", "?")[0].upper() if data.get("q39_right_confidence") else "?"
         c40r = data.get("q40_right_confidence", "?")[0].upper() if data.get("q40_right_confidence") else "?"
         
-        # Calculate accuracy against ground truth
+        # Calculate accuracy against ground truth and apply color coding
         student_acc_str = "N/A"
         cumulative_acc_str = "N/A"
+        q38lt, q39l, q40l, q38lb, q39r, q40r = q38lt_raw, q39l_raw, q40l_raw, q38lb_raw, q39r_raw, q40r_raw
         
         if ground_truth and name not in ("UNKNOWN", "EXTRACTION_ERROR", "?"):
             matched_gt_name = fuzzy_match_name(name, gt_names)
             if matched_gt_name:
                 gt_answers = ground_truth[matched_gt_name]
-                student_acc = calculate_student_accuracy(data, gt_answers)
+                gt_pad = list(gt_answers) + [""] * len(ANSWER_FIELDS)
+                gt_pad = gt_pad[: len(ANSWER_FIELDS)]
+
+                # Apply color coding - red for wrong/missing, green for correct
+                q38lt = color_wrong_answer(q38lt_raw, gt_pad[0])
+                q39l  = color_wrong_answer(q39l_raw, gt_pad[1])
+                q40l  = color_wrong_answer(q40l_raw, gt_pad[2])
+                q38lb = color_wrong_answer(q38lb_raw, gt_pad[3])
+                q39r  = color_wrong_answer(q39r_raw, gt_pad[4])
+                q40r  = color_wrong_answer(q40r_raw, gt_pad[5])
+
+                # Calculate student accuracy
+                student_acc = calculate_student_accuracy(data, gt_pad)
                 student_acc_str = format_accuracy(student_acc)
                 
                 # Update cumulative stats
@@ -674,7 +992,8 @@ def main():
                 data["student_accuracy"] = student_acc
                 data["matched_ground_truth_name"] = matched_gt_name
         
-        print(f" [{marker}] {name}({nc})  |  Q38L↑:{q38lt}({c38lt})  Q39L:{q39l}({c39l})  Q40L:{q40l}({c40l})  Q38L↓:{q38lb}({c38lb})  Q39R:{q39r}({c39r})  Q40R:{q40r}({c40r})  |  Acc: {student_acc_str} (Student) / {cumulative_acc_str} (Cumulative)")
+        # Reset colors before printing non-answer fields to avoid color bleed
+        print(f" [{marker}] {name}({nc})  |  Q38L↑:{q38lt}({c38lt})  Q39L:{q39l}({c39l})  Q40L:{q40l}({c40l})  Q38L↓:{q38lb}({c38lb})  Q39R:{q39r}({c39r})  Q40R:{q40r}({c40r})  |  Acc here: {student_acc_str} / Cum: {cumulative_acc_str}{Colors.RESET}")
 
         save_results(list(results_map.values()), output_json)
         time.sleep(API_CALL_DELAY_S)
