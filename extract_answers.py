@@ -23,6 +23,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
 from google import genai
@@ -37,6 +38,108 @@ from PIL import Image
 load_dotenv()
 
 # ---------------------------------------------------------------------------
+# Ground Truth Handling
+# ---------------------------------------------------------------------------
+
+# Default path to ground truth file (with trailing space as created)
+GROUND_TRUTH_PATH = Path("/Users/joschka/Desktop/Programming/Auto-Grader/Ground Truth ")
+
+# Answer field names in order (matching ground truth columns)
+ANSWER_FIELDS = [
+    "q38_left_top",
+    "q39_left",
+    "q40_left",
+    "q38_left_bottom",
+    "q39_right",
+    "q40_right",
+]
+
+
+def load_ground_truth(gt_path: Path = GROUND_TRUTH_PATH) -> dict[str, list[str]]:
+    """Load ground truth answers from file.
+    
+    Returns dict mapping student_name -> [q38_left_top, q39_left, q40_left, 
+                                          q38_left_bottom, q39_right, q40_right]
+    Name matching is fuzzy to handle slight variations.
+    """
+    if not gt_path.exists():
+        return {}
+    
+    gt_data = {}
+    try:
+        with open(gt_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        
+        for line in lines[1:]:  # Skip header line
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 7:  # name + 6 answers
+                name = parts[0]
+                answers = parts[1:7]  # Take exactly 6 answers
+                gt_data[name] = answers
+    except Exception as e:
+        print(f"Warning: Could not load ground truth from {gt_path}: {e}")
+    
+    return gt_data
+
+
+def fuzzy_match_name(extracted_name: str, gt_names: list[str]) -> str | None:
+    """Find the best matching ground truth name using fuzzy matching."""
+    if not extracted_name or extracted_name in ("UNKNOWN", "EXTRACTION_ERROR"):
+        return None
+    
+    extracted_lower = extracted_name.lower().strip()
+    
+    # First try exact match (case-insensitive)
+    for gt_name in gt_names:
+        if gt_name.lower() == extracted_lower:
+            return gt_name
+    
+    # Try substring matching
+    for gt_name in gt_names:
+        gt_lower = gt_name.lower()
+        if extracted_lower in gt_lower or gt_lower in extracted_lower:
+            return gt_name
+    
+    # Try fuzzy matching with similarity ratio
+    best_match = None
+    best_ratio = 0.0
+    for gt_name in gt_names:
+        ratio = SequenceMatcher(None, extracted_lower, gt_name.lower()).ratio()
+        if ratio > best_ratio and ratio >= 0.6:  # 60% similarity threshold
+            best_ratio = ratio
+            best_match = gt_name
+    
+    return best_match
+
+
+def calculate_student_accuracy(extracted: dict, gt_answers: list[str]) -> float:
+    """Calculate accuracy percentage for a single student."""
+    correct = 0
+    total = len(ANSWER_FIELDS)
+    
+    for i, field in enumerate(ANSWER_FIELDS):
+        extracted_val = extracted.get(field, "?").upper().strip()
+        gt_val = gt_answers[i].upper().strip() if i < len(gt_answers) else ""
+        
+        if extracted_val == gt_val and extracted_val not in ("", "?"):
+            correct += 1
+    
+    return (correct / total) * 100 if total > 0 else 0.0
+
+
+def format_accuracy(acc: float) -> str:
+    """Format accuracy as percentage string with color coding via ASCII."""
+    if acc >= 80:
+        return f"{acc:.0f}%"  # Good
+    elif acc >= 50:
+        return f"{acc:.0f}%"  # Okay
+    else:
+        return f"{acc:.0f}%"  # Poor
+
+# ---------------------------------------------------------------------------
 # Configuration defaults
 # ---------------------------------------------------------------------------
 
@@ -47,10 +150,12 @@ PDF_DPI = 300  # 150 DPI is sufficient for Gemini to read handwritten letters an
 JPEG_QUALITY = 95
 CROP_TOP_FRACTION = 0.5
 
-GEMINI_MODEL = "gemini-3-flash-preview"
-API_CALL_DELAY_S = 1.5
+# Gemini 3 Pro Preview is deprecated (shut down); use 3.1 Pro Preview per
+# https://ai.google.dev/gemini-api/docs/models
+GEMINI_MODEL = "gemini-3.1-pro-preview"
+API_CALL_DELAY_S = 0
 MAX_RETRIES = 3
-RETRY_BACKOFF_S = 5
+RETRY_BACKOFF_S = 1
 
 
 # ---------------------------------------------------------------------------
@@ -59,36 +164,137 @@ RETRY_BACKOFF_S = 5
 
 class StudentAnswers(BaseModel):
     student_name: str
-    q38_left_top: str    # left side, position 1 (top)     — Q38
-    q39_left: str        # left side, position 2           — Q39
-    q40_left: str        # left side, position 3           — Q40
-    q38_left_bottom: str # left side, position 4 (bottom)  — Q38 again
-    q39_right: str       # right side, position 1 (top)    — Q39
-    q40_right: str       # right side, position 2          — Q40
-    confidence: str
+    student_name_confidence: str  # high, medium, low for the name
+    q38_left_top: str             # left side, position 1 (top)     — Q38
+    q38_left_top_confidence: str  # high, medium, low
+    q39_left: str                 # left side, position 2           — Q39
+    q39_left_confidence: str      # high, medium, low
+    q40_left: str                 # left side, position 3           — Q40
+    q40_left_confidence: str      # high, medium, low
+    q38_left_bottom: str          # left side, position 4 (bottom)  — Q38 again
+    q38_left_bottom_confidence: str  # high, medium, low
+    q39_right: str                # right side, position 1 (top)    — Q39
+    q39_right_confidence: str     # high, medium, low
+    q40_right: str                # right side, position 2          — Q40
+    q40_right_confidence: str     # high, medium, low
+    confidence: str               # overall page confidence (high/medium/low)
 
 
 PROMPT = """\
-You are reading a scanned student exam answer sheet for a multiple-choice test.
-Each student circles or writes a single letter — A, B, C, or D — for each question.
+You are an expert exam grader analyzing scanned IGCSE Physics answer sheets. Your task is to accurately extract student names and multiple-choice answers from handwritten exam papers.
 
-On the LEFT side of the page (in order from top to bottom):
-  - Question 38 answer  → field: q38_left_top
-  - Question 39 answer  → field: q39_left
-  - Question 40 answer  → field: q40_left
-  - Question 38 answer  → field: q38_left_bottom  (Q38 appears a second time at the bottom)
+=== PAGE LAYOUT ===
+The answer sheet is divided into sections:
 
-On the RIGHT side of the page (in order from top to bottom):
-  - Question 39 answer  → field: q39_right
-  - Question 40 answer  → field: q40_right
+TOP SECTION (approximately top 15% of page):
+  - Student name written by hand in English letters
+  - Usually appears near the top-left or top-center
+  - May be preceded by labels like "Name:", "Student:", or similar
 
-At the TOP of the page, the student has written their name in English.
+LEFT COLUMN (middle-left area, vertical arrangement):
+  Position 1 (upper): Question 38  → field: q38_left_top
+  Position 2:         Question 39  → field: q39_left
+  Position 3:         Question 40  → field: q40_left
+  Position 4 (lower): Question 38  → field: q38_left_bottom (second instance of Q38)
 
-Rules:
-- For each question field, return ONLY the single letter the student wrote: A, B, C, or D.
-- If a letter is illegible or missing, return "?" for that field.
-- For student_name, return the exact name as written, or "UNKNOWN" if illegible.
-- For confidence, return "high", "medium", or "low" based on overall legibility.
+RIGHT COLUMN (middle-right area, vertical arrangement):
+  Position 1 (upper): Question 39  → field: q39_right
+  Position 2 (lower): Question 40  → field: q40_right
+
+=== ANSWER FORMAT GUIDE ===
+Students indicate answers in these ways:
+1. CIRCLING the letter (A, B, C, or D) on a printed grid
+2. WRITING the letter clearly next to the question number
+3. TICKING or marking the chosen option
+
+Look for:
+- Printed letters A B C D arranged horizontally or vertically
+- One option will have a circle, tick, cross, or handwritten mark
+- The mark may be: a circle (O), tick (✓), cross (X), underline, or scribble over the letter
+
+=== HANDWRITING RECOGNITION TIPS ===
+For student names:
+- Common patterns: First Last, First M. Last, Last First
+- Look for capitalized words
+- Ignore titles like "Mr.", "Ms.", "Miss" if present
+- If multiple names present, choose the one that appears to be the student's full name
+
+=== HANDLING AMBIGUOUS CASES ===
+1. Multiple answers marked:
+   - If student circled/changed answer: pick the FINAL/clearest answer
+   - If two answers equally prominent: return "?" with low confidence
+
+2. Crossed-out answers:
+   - Ignore crossed-out responses, use the replacement answer
+   - If unclear which is final: return "?" with low confidence
+
+3. Stray marks:
+   - Distinguish between intentional answers and accidental marks
+   - A clear circle/tick near a letter = intentional answer
+   - Random dots/lines far from options = ignore
+
+4. Poor image quality:
+   - Look for contrast differences (darker areas = ink)
+   - If answer is faint but discernible: use it with medium confidence
+   - If completely unreadable: return "?" with low confidence
+
+5. Partial marks:
+   - Half-circle around letter = that letter was selected
+   - Letter written small nearby = that letter was selected
+
+=== EXTRACTION RULES ===
+1. For each question field, return ONLY: A, B, C, D, or ?
+   - NEVER return descriptive text like "circle around B" - just "B"
+   - NEVER return empty string "" - use "?" if unreadable
+
+2. For student_name field:
+   - Return the name EXACTLY as written (preserve spelling)
+   - Convert to proper case if all caps or all lowercase
+   - Return "UNKNOWN" only if completely illegible or missing
+   - Do NOT include labels like "Name:" - just the name itself
+
+3. Confidence assessment (per-field):
+   HIGH confidence when:
+   - Letter is clearly written or circled with dark, unambiguous ink
+   - No competing marks nearby
+   - Readable even at a glance
+   
+   MEDIUM confidence when:
+   - Letter is somewhat faint but readable
+   - Minor ambiguity (could be B or D, but B is more likely)
+   - Slightly messy handwriting but decipherable
+   
+   LOW confidence when:
+   - Significant ambiguity between two letters
+   - Very faint or smudged marking
+   - Competing marks that create doubt
+   - Any uncertainty that affects grading accuracy
+
+4. Overall page confidence:
+   - HIGH: All fields clear and unambiguous
+   - MEDIUM: Most fields clear, 1-2 minor uncertainties
+   - LOW: Multiple uncertainties or poor image quality
+
+=== EXAMPLES ===
+Example 1 - Clear answer:
+  [Image shows dark circle around letter B]
+  → q39_left: "B", q39_left_confidence: "high"
+
+Example 2 - Ambiguous mark:
+  [Image shows faint tick mark between C and D]
+  → q40_right: "?", q40_right_confidence: "low"
+
+Example 3 - Changed answer:
+  [Image shows crossed-out A, circle around C]
+  → q38_left_top: "C", q38_left_top_confidence: "medium"
+
+Example 4 - Written answer:
+  [Image shows handwritten "D" next to question number]
+  → q39_left: "D", q39_left_confidence: "high"
+
+Example 5 - Name extraction:
+  [Image shows "john smith" written at top]
+  → student_name: "John Smith", student_name_confidence: "high"
 """
 
 
@@ -169,12 +375,19 @@ def call_gemini(client: genai.Client, image_bytes: bytes, page_num: int) -> dict
 
     return {
         "student_name": "EXTRACTION_ERROR",
+        "student_name_confidence": "failed",
         "q38_left_top": "",
+        "q38_left_top_confidence": "failed",
         "q39_left": "",
+        "q39_left_confidence": "failed",
         "q40_left": "",
+        "q40_left_confidence": "failed",
         "q38_left_bottom": "",
+        "q38_left_bottom_confidence": "failed",
         "q39_right": "",
+        "q39_right_confidence": "failed",
         "q40_right": "",
+        "q40_right_confidence": "failed",
         "confidence": "failed",
         "error": str(last_error),
     }
@@ -281,23 +494,52 @@ def generate_report_pdf(results: list[dict], output_tex: Path, output_report: Pa
             aux.unlink()
 
 
-def print_summary(results: list[dict]):
-    """Print a quick summary of extraction quality."""
+def print_summary(results: list[dict], ground_truth: dict[str, list[str]] | None = None):
+    """Print a quick summary of extraction quality and accuracy."""
     total = len(results)
     high = sum(1 for r in results if r.get("confidence") == "high")
     medium = sum(1 for r in results if r.get("confidence") == "medium")
     low = sum(1 for r in results if r.get("confidence") == "low")
     failed = sum(1 for r in results if r.get("confidence") == "failed")
     unknown = sum(1 for r in results if r.get("student_name") in ("UNKNOWN", "EXTRACTION_ERROR"))
+    
+    # Calculate overall accuracy if ground truth available
+    if ground_truth:
+        gt_names = list(ground_truth.keys())
+        total_correct = 0
+        total_answer_fields = 0
+        matched_students = 0
+        
+        for r in results:
+            name = r.get("student_name", "")
+            if name not in ("UNKNOWN", "EXTRACTION_ERROR", ""):
+                matched_gt_name = fuzzy_match_name(name, gt_names)
+                if matched_gt_name:
+                    matched_students += 1
+                    gt_answers = ground_truth[matched_gt_name]
+                    for i, field in enumerate(ANSWER_FIELDS):
+                        extracted_val = r.get(field, "?").upper().strip()
+                        gt_val = gt_answers[i].upper().strip() if i < len(gt_answers) else ""
+                        total_answer_fields += 1
+                        if extracted_val == gt_val and extracted_val not in ("", "?"):
+                            total_correct += 1
+        
+        overall_acc = (total_correct / total_answer_fields * 100) if total_answer_fields > 0 else 0
 
-    print(f"\n{'=' * 50}")
-    print(f"  SUMMARY: {total} pages processed")
+    print(f"\n{'=' * 60}")
+    print(f"  EXTRACTION SUMMARY: {total} pages processed")
     print(f"  High confidence:   {high}")
     print(f"  Medium confidence: {medium}")
     print(f"  Low confidence:    {low}")
     print(f"  Failed:            {failed}")
     print(f"  Unreadable names:  {unknown}")
-    print(f"{'=' * 50}")
+    
+    if ground_truth:
+        print(f"\n  ACCURACY SUMMARY:")
+        print(f"  Students matched to ground truth: {matched_students}/{len(gt_names)}")
+        print(f"  Overall accuracy: {overall_acc:.1f}% ({total_correct}/{total_answer_fields} correct)")
+    
+    print(f"{'=' * 60}")
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +585,14 @@ def main():
         print(f"Resuming -- {len(existing)} pages already done, skipping them.")
     elif args.skip:
         print("No existing results found, processing all pages.")
+    
+    # Load ground truth for accuracy calculation
+    ground_truth = load_ground_truth()
+    gt_names = list(ground_truth.keys())
+    if ground_truth:
+        print(f"Ground truth loaded: {len(ground_truth)} students ({', '.join(gt_names)})")
+    else:
+        print("Warning: No ground truth found. Accuracy metrics disabled.")
 
     print(f"Converting PDF to images at {PDF_DPI} DPI (this may take a minute)...")
     t_pdf_to_images = time.perf_counter()
@@ -356,6 +606,11 @@ def main():
     )
 
     results_map: dict[int, dict] = dict(existing)
+    
+    # Track cumulative accuracy across all students
+    cumulative_correct = 0
+    cumulative_total = 0
+    students_with_gt = 0
 
     for page_num, page in enumerate(pages, start=1):
         if page_num in results_map:
@@ -383,13 +638,49 @@ def main():
         q38lb = data.get("q38_left_bottom", "?")
         q39r  = data.get("q39_right", "?")
         q40r  = data.get("q40_right", "?")
-        print(f" [{marker}] {name}  |  Q38L↑:{q38lt}  Q39L:{q39l}  Q40L:{q40l}  Q38L↓:{q38lb}  Q39R:{q39r}  Q40R:{q40r}")
+        # Per-field confidence indicators
+        nc = data.get("student_name_confidence", "?")[0].upper() if data.get("student_name_confidence") else "?"
+        c38lt = data.get("q38_left_top_confidence", "?")[0].upper() if data.get("q38_left_top_confidence") else "?"
+        c39l = data.get("q39_left_confidence", "?")[0].upper() if data.get("q39_left_confidence") else "?"
+        c40l = data.get("q40_left_confidence", "?")[0].upper() if data.get("q40_left_confidence") else "?"
+        c38lb = data.get("q38_left_bottom_confidence", "?")[0].upper() if data.get("q38_left_bottom_confidence") else "?"
+        c39r = data.get("q39_right_confidence", "?")[0].upper() if data.get("q39_right_confidence") else "?"
+        c40r = data.get("q40_right_confidence", "?")[0].upper() if data.get("q40_right_confidence") else "?"
+        
+        # Calculate accuracy against ground truth
+        student_acc_str = "N/A"
+        cumulative_acc_str = "N/A"
+        
+        if ground_truth and name not in ("UNKNOWN", "EXTRACTION_ERROR", "?"):
+            matched_gt_name = fuzzy_match_name(name, gt_names)
+            if matched_gt_name:
+                gt_answers = ground_truth[matched_gt_name]
+                student_acc = calculate_student_accuracy(data, gt_answers)
+                student_acc_str = format_accuracy(student_acc)
+                
+                # Update cumulative stats
+                for i, field in enumerate(ANSWER_FIELDS):
+                    extracted_val = data.get(field, "?").upper().strip()
+                    gt_val = gt_answers[i].upper().strip() if i < len(gt_answers) else ""
+                    cumulative_total += 1
+                    if extracted_val == gt_val and extracted_val not in ("", "?"):
+                        cumulative_correct += 1
+                
+                students_with_gt += 1
+                cumulative_acc = (cumulative_correct / cumulative_total * 100) if cumulative_total > 0 else 0
+                cumulative_acc_str = format_accuracy(cumulative_acc)
+                
+                # Store accuracy in data for JSON output
+                data["student_accuracy"] = student_acc
+                data["matched_ground_truth_name"] = matched_gt_name
+        
+        print(f" [{marker}] {name}({nc})  |  Q38L↑:{q38lt}({c38lt})  Q39L:{q39l}({c39l})  Q40L:{q40l}({c40l})  Q38L↓:{q38lb}({c38lb})  Q39R:{q39r}({c39r})  Q40R:{q40r}({c40r})  |  Acc: {student_acc_str} (Student) / {cumulative_acc_str} (Cumulative)")
 
         save_results(list(results_map.values()), output_json)
         time.sleep(API_CALL_DELAY_S)
 
     all_results = list(results_map.values())
-    print_summary(all_results)
+    print_summary(all_results, ground_truth if ground_truth else None)
     generate_report_pdf(all_results, output_tex, output_report)
     print(f"\nJSON  -> {output_json}")
     print(f"LaTeX -> {output_tex}")
