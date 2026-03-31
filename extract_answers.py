@@ -208,7 +208,7 @@ def normalize_extracted_record(data: dict) -> dict:
 
 # Gemini 3 Pro Preview is deprecated (shut down); use 3.1 Pro Preview per
 # https://ai.google.dev/gemini-api/docs/models
-GEMINI_MODEL = "gemini-3.1-pro-preview"
+GEMINI_MODEL = "gemini-2.5-pro-exp-03-25"
 API_CALL_DELAY_S = 0
 MAX_RETRIES = 3
 RETRY_BACKOFF_S = 1
