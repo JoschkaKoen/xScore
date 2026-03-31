@@ -167,9 +167,9 @@ def color_wrong_answer(value: str, gt_value: str) -> str:
 DEFAULT_PDF = "output/20260330135527722.pdf"
 SAVE_DEBUG_IMAGES = True
 
-PDF_DPI = 300  # 150 DPI is sufficient for Gemini to read handwritten letters and names
+PDF_DPI = 400  # Higher DPI for better handwriting recognition
 JPEG_QUALITY = 95
-CROP_TOP_FRACTION = 0.5
+CROP_TOP_FRACTION = 0.6
 
 
 def effective_crop_fraction() -> float:
@@ -292,8 +292,11 @@ For letter recognition (A, B, C, D):
    - If two answers equally prominent: return "?" with low confidence
 
 2. Crossed-out answers:
-   - Ignore crossed-out responses, use the replacement answer
-   - If unclear which is final: return "?" with low confidence
+   - Crossed-out answers have lines through them (single line, X, or scribble over)
+   - The FINAL answer is the one WITHOUT cross-out marks
+   - ALWAYS select the answer that is NOT crossed out
+   - If crossed-out answer is "A" and there's a clear "B" next to it, return "B"
+   - Look for: fresh ink/darker marks for final answers vs lighter/strikethrough for crossed-out
 
 3. Stray marks:
    - Distinguish between intentional answers and accidental marks
@@ -506,6 +509,67 @@ def call_gemini(client: genai.Client, image_bytes: bytes, page_num: int) -> dict
             "error": str(last_error),
         }
     )
+
+
+def call_gemini_multi_pass(client: genai.Client, image_bytes: bytes, page_num: int, passes: int = 2) -> dict:
+    """Call Gemini multiple times and return result with highest confidence.
+    
+    Multi-pass extraction helps catch errors from ambiguous images by
+    using consistency voting and confidence scoring across multiple runs.
+    """
+    if passes <= 1:
+        return call_gemini(client, image_bytes, page_num)
+    
+    results = []
+    for i in range(passes):
+        result = call_gemini(client, image_bytes, page_num)
+        results.append(result)
+        if i < passes - 1:
+            time.sleep(0.5)  # Small delay between passes
+    
+    # If all results agree, return the first one
+    if all(r == results[0] for r in results):
+        return results[0]
+    
+    # Vote on each field separately
+    from collections import Counter
+    
+    voted_result = {"page_number": page_num}
+    all_fields = [
+        "student_name", "student_name_confidence",
+        "q38_left_top", "q38_left_top_confidence",
+        "q39_left", "q39_left_confidence", 
+        "q40_left", "q40_left_confidence",
+        "q38_left_bottom", "q38_left_bottom_confidence",
+        "q39_right", "q39_right_confidence",
+        "q40_right", "q40_right_confidence",
+        "confidence"
+    ]
+    
+    for field in all_fields:
+        values = [r.get(field, "?") for r in results if field in r]
+        if values:
+            # Count occurrences
+            counter = Counter(values)
+            most_common, count = counter.most_common(1)[0]
+            
+            # If majority agrees, use it
+            if count >= len(values) / 2:
+                voted_result[field] = most_common
+            else:
+                # No majority - use value from highest confidence result
+                for r in results:
+                    if r.get("confidence") == "high":
+                        voted_result[field] = r.get(field, "?")
+                        break
+                else:
+                    voted_result[field] = most_common  # Fallback
+    
+    # Mark if there was disagreement
+    if not all(r.get("confidence") == "high" for r in results):
+        voted_result["confidence"] = "medium"
+    
+    return voted_result
 
 
 def load_existing_results(output_json: Path) -> dict[int, dict]:
@@ -735,7 +799,8 @@ def extract_first_n_students_eval(
         if debug_image_dir and SAVE_DEBUG_IMAGES:
             processed.save(debug_image_dir / f"page_{page_num:04d}.jpg", quality=85)
 
-        data = call_gemini(client, img_bytes, page_num)
+        # Use multi-pass extraction for better accuracy during evaluation
+        data = call_gemini_multi_pass(client, img_bytes, page_num, passes=2)
         data["page_number"] = page_num
 
         name = data.get("student_name", "?")
