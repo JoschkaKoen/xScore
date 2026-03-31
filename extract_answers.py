@@ -215,7 +215,7 @@ RETRY_BACKOFF_S = 1
 
 # Ensemble voting for improved accuracy
 ENSEMBLE_CALLS = 3  # Number of API calls per page for majority voting
-USE_ENSEMBLE = True  # Set to False for single-call mode (faster but less accurate)
+USE_ENSEMBLE = False  # Set to True for ensemble voting (slower but potentially more accurate)
 
 
 # ---------------------------------------------------------------------------
@@ -399,28 +399,22 @@ Example 8 - Faint markings:
   [Image shows very light pencil marks]
   → Use your best judgment; if truly unreadable return "?" with low confidence
 
-Example 6 - Multiple Q38s on left side:
-  [Image shows Q38 at top-left and another Q38 at bottom-left]
-  → q38_left_top: "A", q38_left_bottom: "C" (these are DIFFERENT answers!)
-
-Example 7 - Right side layout:
-  [Image shows Q39 and Q40 on the right side]
-  → q39_right: "B", q40_right: "D" (remember: right side has NO Q38!)
-
-Example 8 - Faint markings:
-  [Image shows very light pencil marks]
-  → Use your best judgment; if truly unreadable return "?" with low confidence
-
-Example 9 - Checkmark/tick indicating D:
-  [Image shows checkmark ✓ or diagonal tick mark placed beside letter D, NOT a circle]
+Example 9 - Checkmark/tick indicating D (CRITICAL):
+  [Image shows checkmark ✓ or diagonal tick mark placed beside letter D]
   → q39_left: "D", q39_left_confidence: "high"
-  CRITICAL: A checkmark next to D means D is selected. Do not confuse with nearby letters.
-  The checkmark indicates which letter was chosen, even if it's not a full circle.
+  IMPORTANT: The checkmark touches or points to the selected letter. If the mark is near D, the answer is D.
+  Do NOT confuse D with nearby C - look for the vertical line of the D shape (|)) vs the open C.
 
-Example 10 - B vs D confusion with checkmark:
-  [Image shows checkmark between options B and D, but closer to D]
-  → q39_left: "D", q39_left_confidence: "medium"
-  The checkmark position indicates the intended answer. When uncertain, mark as "?"
+Example 10 - D vs C confusion (COMMON ERROR):
+  [Image shows checkmark that could be near C or D]
+  → Look carefully: C is a curved open shape like "(", D has a straight vertical line on left like "|)"
+  → If the checkmark touches the vertical line, it's D. If it touches the open curve, it's C.
+  → When truly uncertain between C and D: mark as "?" with low confidence
+
+Example 11 - Circle around C:
+  [Image shows circle or oval drawn around letter C]
+  → q38_left_bottom: "C", q38_left_bottom_confidence: "high"
+  A complete or nearly complete circle/oval around C means C is selected.
 
 Example 11 - Circle vs checkmark on same option:
   [Image shows letter D with both a faint partial circle AND a clear checkmark]
