@@ -101,6 +101,11 @@ GEMINI_MAX_OUTPUT_TOKENS = 32000
 # False → thinking disabled (thinking_budget=0); faster and cheaper.
 GEMINI_THINKING = False
 
+# Token budget for Gemini's internal reasoning (only used when GEMINI_THINKING = True).
+# Higher values allow deeper reasoning; lower values constrain it.
+# Recommended range: 512–8192. Gemini 2.5 Flash cap is 24576.
+GEMINI_THINKING_BUDGET = 2048
+
 # =============================================================================
 # Kimi Model Parameters
 # =============================================================================
