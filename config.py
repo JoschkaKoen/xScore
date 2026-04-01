@@ -53,7 +53,7 @@ RETRY_BACKOFF_S = 1
 
 # DPI for PDF to image conversion. Higher = better quality but slower.
 # 400 DPI is recommended for handwriting recognition.
-PDF_DPI = 400
+PDF_DPI = 300
 
 # JPEG quality for image encoding (0-100). Higher = better quality, larger size.
 JPEG_QUALITY = 95
@@ -111,7 +111,7 @@ GEMINI_THINKING_BUDGET = 2048
 # =============================================================================
 
 # Maximum tokens for Kimi response
-KIMI_MAX_TOKENS = 4096
+KIMI_MAX_TOKENS = 8192
 
 # Enable extended thinking for kimi-k2.x models.
 # True  → model reasons step-by-step before answering (slower, uses more tokens).
