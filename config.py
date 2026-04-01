@@ -131,3 +131,19 @@ GROUND_TRUTH_PATH = Path(__file__).resolve().parent / "Ground Truth "
 # Enable saving debug images (cropped page images)
 SAVE_DEBUG_IMAGES = True
 
+# =============================================================================
+# Generic Pipeline Configuration (grade.py)
+# =============================================================================
+
+# DPI used when rendering pages for the main grading pass
+PIPELINE_DEFAULT_DPI = 400
+
+# DPI used for quick name-recognition crops (lower = faster, sufficient for names)
+NAME_RECOGNITION_DPI = 200
+
+# Fraction of the page height to crop for name detection (top strip only)
+NAME_CROP_FRACTION = 0.15
+
+# AI model used by the pipeline (can differ from AI_MODEL used for benchmarking)
+PIPELINE_AI_MODEL = "kimi-k2.5"
+
