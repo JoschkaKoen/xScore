@@ -104,8 +104,8 @@ When you run `grade.py`, it executes these steps in order:
 | 4. Build scaffold | `scaffold.py` | Parses the exam PDF and answer key to produce a question list with marks and correct answers (cached) |
 | 5. Clean scan | `pdf_cleanup.py` | Rotates pages and removes blanks; skipped with `--no-cleanup` |
 | 6. Assign pages | `page_assignment.py` | Reads the name at the top of each scanned page with Kimi vision and maps pages to roster entries |
-| 7. Detect answers | `answer_detection.py` | For each student, identifies which questions were attempted |
-| 8. Grade | `grading.py` | Compares student answers to the key in one of three modes: `count_marks`, `check_mc`, or `check_answers` |
+| 7. Detect attempted questions | `answer_detection.py` | One quick Kimi call per page: asks which question numbers the student attempted. Produces a per-student list used in step 8 to skip unanswered questions without making extra API calls |
+| 8. Grade | `grading.py` | For each student, only grades questions flagged as attempted in step 7 (skips the rest with 0 marks). Runs in one of three modes: `check_mc` (multiple choice), `check_answers` (all question types), or `count_marks` (tally red marks written by the teacher — step 7 filter is ignored in this mode) |
 | 9. Print results | `output.py` | Displays scaffold, page assignments, marks table, and accuracy stats in the terminal |
 | 10. Ground truth | `ground_truth.py` | If a ground-truth file exists in the folder, computes and displays per-student accuracy |
 | 11. Generate report | `report.py` | Produces a LaTeX/PDF report with results table and class statistics; skipped with `--no-report` |
