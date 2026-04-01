@@ -46,8 +46,17 @@ class KimiProvider:
         if not api_key:
             print("Warning: KIMI_API_KEY not set. Kimi will not be available.")
             return None
+        
+        # Support custom base URL for different regions (China vs international)
+        # Default: https://api.moonshot.cn/v1 (international)
+        # For China users, set KIMI_BASE_URL in .env if different
+        base_url = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
+        
+        print(f"[INFO] Connecting to Kimi API at: {base_url}")
+        print(f"[INFO] Using API key: {api_key[:15]}...")
+        
         assert _OpenAIClient is not None
-        return _OpenAIClient(api_key=api_key, base_url="https://api.moonshot.cn/v1")
+        return _OpenAIClient(api_key=api_key, base_url=base_url)
 
     def extract(
         self,

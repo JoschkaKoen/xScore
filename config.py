@@ -20,9 +20,12 @@ from pathlib import Path
 #   - "gemini-3.1-pro-preview"  : Google Gemini 3.1 Pro (highest accuracy)
 #   - "gemini-3.0-flash"        : Google Gemini 3.0 Flash (faster, lower accuracy)
 #   - "kimi-k2.5"               : Moonshot Kimi K2.5 (OpenAI-compatible API)
+#   - "kimi-k2"                 : Moonshot Kimi K2 (alternative name)
 #
-# To change the model, edit the line below:
-AI_MODEL = "kimi-k2.5"
+# To change the model, either:
+#   1. Edit the line below, OR
+#   2. Set AI_MODEL environment variable (takes precedence)
+AI_MODEL = os.getenv("AI_MODEL", "kimi-k2.5")
 
 # Exam layout + prompt + schema (see extraction/profiles/)
 EXAM_PROFILE = "igcse_physics"
