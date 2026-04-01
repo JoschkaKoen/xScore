@@ -110,6 +110,39 @@ When you run `grade.py`, it executes these steps in order:
 | 10. Ground truth | `ground_truth.py` | If a ground-truth file exists in the folder, computes and displays per-student accuracy |
 | 11. Generate report | `report.py` | Produces a LaTeX/PDF report with results table and class statistics; skipped with `--no-report` |
 
+### How the blank exam is parsed (scaffold, step 4)
+
+The scaffold is the program's internal model of the exam — the list of questions, their types, their marks, and the correct answers. Building it is the most expensive step, so the result is cached.
+
+**What goes in:** the exam folder must contain two PDFs:
+- A **raw exam PDF** — filename containing `raw` or `exam`, but not `answer` or `scan`
+- An **answer key PDF** — filename containing `answer`
+
+**How it works (`pipeline/scaffold.py`):**
+
+1. **Exam structure pass** — Each page of the blank exam PDF is rendered to a JPEG image (default 200 DPI) and sent to Kimi with a fixed prompt that asks:
+   > *"Identify all questions on this page. For each question return its number, type (`multiple_choice` / `short_answer` / `calculation` / `long_answer`), a brief content summary, and the marks available."*
+
+   Responses come back as JSON. Questions are deduplicated across pages by question number and assembled into a list of `Question` objects (no answers yet).
+
+2. **Answer key pass** — The same page-by-page process runs on the answer key PDF, this time asking:
+   > *"Extract the correct answer and marking criteria for each question. For MC, give the letter. For written questions, give a concise model answer."*
+
+   The results are merged into the `Question` objects from step 1 by matching question numbers.
+
+3. **Cache** — The completed scaffold is written to `scaffold_cache.json` in the exam folder. On future runs, if no PDF in that folder has been modified since the cache was written, the cached scaffold is loaded directly — no API calls are made.
+
+**Output:** an `ExamScaffold` containing a list of `Question` objects, each with:
+
+| Field | Example |
+|-------|---------|
+| `number` | `"1"`, `"2a"`, `"38"` |
+| `question_type` | `"multiple_choice"` |
+| `content_summary` | `"Speed calculation using v = d/t"` |
+| `marks` | `2` |
+| `correct_answer` | `"B"` (MC) or model answer text |
+| `marking_criteria` | optional marking notes |
+
 ---
 
 ## Configuration
