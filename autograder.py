@@ -26,6 +26,8 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from version import __version__
+
 import numpy as np
 import pikepdf
 import pytesseract
@@ -206,6 +208,11 @@ def process_pdf(input_path: str,
 def main():
     parser = argparse.ArgumentParser(
         description="Auto-rotate and de-blank a scanned exam PDF."
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument("input",  help="Path to input PDF")
     parser.add_argument("output", help="Path for output PDF")

@@ -26,6 +26,7 @@ from config import (
     PDF_DPI,
     SAVE_DEBUG_IMAGES,
 )
+from version import __version__
 
 from extraction.eval import extract_first_n_students_eval
 from extraction.ground_truth import (
@@ -57,6 +58,11 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         description="Extract handwritten answers from scanned exam PDFs (Gemini or Kimi per config)."
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "pdf",
