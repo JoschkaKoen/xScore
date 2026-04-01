@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from config import AI_MODEL, KIMI_MAX_TOKENS, KIMI_TEMPERATURE, MAX_RETRIES, RETRY_BACKOFF_S
+from config import AI_MODEL, KIMI_MAX_TOKENS, KIMI_TEMPERATURE, KIMI_THINKING, MAX_RETRIES, RETRY_BACKOFF_S
 from extraction.images import normalize_extracted_record
 
 
@@ -99,8 +99,8 @@ class KimiProvider:
         is_k2_5 = _kimi_k2_5_model()
         extra: dict = {}
         if is_k2_5:
-            # Disable thinking for OCR: faster, cheaper, no chain-of-thought needed.
-            extra["extra_body"] = {"thinking": {"type": "disabled"}}
+            thinking_type = "enabled" if KIMI_THINKING else "disabled"
+            extra["extra_body"] = {"thinking": {"type": thinking_type}}
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:

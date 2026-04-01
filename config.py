@@ -105,10 +105,16 @@ GEMINI_THINKING_BUDGET = 2048
 # =============================================================================
 
 # Temperature for Kimi model
+# Note: kimi-k2.x models ignore this value (fixed by the API at 1.0 / 0.6).
 KIMI_TEMPERATURE = 0.1
 
 # Maximum tokens for Kimi response
 KIMI_MAX_TOKENS = 4096
+
+# Enable extended thinking for kimi-k2.x models.
+# True  → model reasons step-by-step before answering (slower, uses more tokens).
+# False → thinking disabled; faster and cheaper, usually sufficient for OCR.
+KIMI_THINKING = False
 
 # =============================================================================
 # Paths and File Handling
