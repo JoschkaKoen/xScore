@@ -42,9 +42,9 @@ class KimiProvider:
         if not KIMI_AVAILABLE:
             print("Warning: OpenAI package not installed. Run: pip install openai")
             return None
-        api_key = os.getenv("MOONSHOT_API_KEY")
+        api_key = os.getenv("KIMI_API_KEY")
         if not api_key:
-            print("Warning: MOONSHOT_API_KEY not set. Kimi will not be available.")
+            print("Warning: KIMI_API_KEY not set. Kimi will not be available.")
             return None
         assert _OpenAIClient is not None
         return _OpenAIClient(api_key=api_key, base_url="https://api.moonshot.cn/v1")

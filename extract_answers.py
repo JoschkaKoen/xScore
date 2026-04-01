@@ -92,7 +92,7 @@ def main() -> None:
         client = create_extraction_client()
         if client is None:
             if AI_MODEL.startswith("kimi"):
-                print("ERROR: Kimi model selected but failed to initialize. Check MOONSHOT_API_KEY.")
+                print("ERROR: Kimi model selected but failed to initialize. Check KIMI_API_KEY.")
             else:
                 print("ERROR: Set GOOGLE_API_KEY (or GEMINI_API_KEY) in .env or environment.")
             raise SystemExit(1)
@@ -129,7 +129,7 @@ def main() -> None:
     client = create_extraction_client()
     if client is None:
         if AI_MODEL.startswith("kimi"):
-            print("ERROR: Kimi model selected but failed to initialize. Check MOONSHOT_API_KEY.")
+            print("ERROR: Kimi model selected but failed to initialize. Check KIMI_API_KEY.")
         else:
             print("ERROR: Set GOOGLE_API_KEY (or GEMINI_API_KEY) in .env or environment.")
         raise SystemExit(1)
