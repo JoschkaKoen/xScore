@@ -13,6 +13,7 @@ from pydantic import BaseModel, ValidationError
 from config import AI_MODEL, KIMI_MAX_TOKENS, KIMI_TEMPERATURE, MAX_RETRIES, RETRY_BACKOFF_S
 from extraction.images import normalize_extracted_record
 
+
 try:
     from openai import OpenAI as _OpenAIClient
 
@@ -20,6 +21,11 @@ try:
 except ImportError:
     KIMI_AVAILABLE = False
     _OpenAIClient = None  # type: ignore[assignment,misc]
+
+
+def _kimi_k2_5_model() -> bool:
+    """Return True for kimi-k2.5 family, which has fixed temperature and thinking mode."""
+    return AI_MODEL.startswith("kimi-k2")
 
 
 def _failed_record(last_error: Exception | str | None, answer_fields: list[str]) -> dict:
@@ -87,9 +93,18 @@ class KimiProvider:
         backoff = RETRY_BACKOFF_S
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
+        # kimi-k2.5 has fixed temperature (1.0 thinking / 0.6 non-thinking);
+        # passing any other value raises a 400 error.
+        # For older moonshot-v1-* models, pass the configured temperature normally.
+        is_k2_5 = _kimi_k2_5_model()
+        extra: dict = {}
+        if is_k2_5:
+            # Disable thinking for OCR: faster, cheaper, no chain-of-thought needed.
+            extra["extra_body"] = {"thinking": {"type": "disabled"}}
+
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                response = client.chat.completions.create(
+                kwargs: dict = dict(
                     model=AI_MODEL,
                     messages=[
                         {
@@ -103,10 +118,13 @@ class KimiProvider:
                             ],
                         }
                     ],
-                    temperature=KIMI_TEMPERATURE,
                     max_tokens=KIMI_MAX_TOKENS,
                     response_format={"type": "json_object"},
+                    **extra,
                 )
+                if not is_k2_5:
+                    kwargs["temperature"] = KIMI_TEMPERATURE
+                response = client.chat.completions.create(**kwargs)
 
                 raw = response.choices[0].message.content or ""
                 try:
