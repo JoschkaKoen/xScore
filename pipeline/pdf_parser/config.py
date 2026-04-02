@@ -54,6 +54,14 @@ class ParserConfig:
     # Snap bboxes to layout cell (sub-page) top/bottom when near the edge.
     subpage_edge_snap_tol_top_pt: float = 20.0
     subpage_edge_snap_tol_bottom_pt: float = 24.0
+    # Gap between the previous exercise's last text line and the next leaf bbox top.
+    leaf_bbox_gap_after_previous_line_pt: float = 2.0
+    # Equation-blank bbox geometry (for "label = …… [n]" answer lines).
+    equation_blank_pad_above_pt: float = 30.0
+    equation_blank_pad_below_subpage_pt: float = 25.0
+    equation_blank_subpage_bottom_tol_pt: float = 40.0
+    equation_blank_nudge_top_pt: float = 5.0
+    equation_blank_nudge_bottom_pt: float = 5.0
 
 
 DEFAULT_PARSER_CONFIG = ParserConfig()

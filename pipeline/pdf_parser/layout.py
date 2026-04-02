@@ -196,15 +196,6 @@ def _snap_auxiliary_boxes_to_cell_edge(
             y1 = float(cell.y1)
         wa.bbox = BBox(b.x0, y0, b.x1, y1, b.page)
 
-    if node.answer_field_bbox is not None:
-        b = node.answer_field_bbox
-        y0, y1 = b.y0, b.y1
-        if touch_top(y0):
-            y0 = float(cell.y0)
-        if touch_bottom(y1):
-            y1 = float(cell.y1)
-        node.answer_field_bbox = BBox(b.x0, y0, b.x1, y1, b.page)
-
     for im in node.images:
         b = im.bbox
         y0, y1 = b.y0, b.y1

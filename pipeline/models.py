@@ -58,14 +58,13 @@ class Question:
     text: str                   # stem only for MC (options in answer_options); full text otherwise
     marks: int
     bbox: BBox                  # primary region (first segment of multi-page questions)
-    answer_field_bbox: BBox | None = None  # generous band for handwriting (PDF pt, page = bbox.page)
     images: list[ExamImage] = field(default_factory=list)
+    equation_blank_bboxes: list[BBox] = field(default_factory=list)  # one per "label = …… [n]" line
     writing_areas: list[WritingArea] = field(default_factory=list)
     subquestions: list[Question] = field(default_factory=list)
     correct_answer: str | None = None
     marking_criteria: str | None = None
     answer_images: list[ExamImage] = field(default_factory=list)
-    answer_key_text: str | None = None  # full raw text from answer-key PDF
     answer_options: list[McAnswerOption] = field(default_factory=list)  # MC only
 
     @property

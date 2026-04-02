@@ -7,11 +7,13 @@ from pathlib import Path
 
 import fitz
 
-from pipeline.models import BBox, ExamImage, McAnswerOption, Question, WritingArea
+from pipeline.models import BBox, ExamImage, McAnswerOption, Question, WritingArea, flatten_questions
 from pipeline.pdf_parser.config import DEFAULT_PARSER_CONFIG, ParserConfig
 
 # Printed figure captions (exclude from vector-figure raster union).
 _RE_FIG_CAPTION_LINE = re.compile(r"^Fig(?:\.|ure)?\b", re.I)
+# Cambridge mini-page banner lines (e.g. "---IGCSE Physics: s24 23---") — not exercise content.
+_RE_EXAM_SHEET_LABEL_LINE = re.compile(r"IGCSE\s+Physics", re.I)
 
 # PDF private-use glyph for multiplication (often shows as ""); map to ASCII "x".
 _PDF_PUA_MULTIPLY = "\uf0b4"
@@ -82,33 +84,6 @@ def normalize_exam_scientific_text(text: str) -> str:
     t = t.replace("×", "x")
     return normalize_scientific_powers_of_ten(t)
 
-
-def detect_writing_areas(
-    page: fitz.Page, clip: fitz.Rect, page_1based: int, cfg: ParserConfig
-) -> list[WritingArea]:
-    areas: list[WritingArea] = []
-    for d in page.get_drawings():
-        r = fitz.Rect(d.get("rect", (0, 0, 0, 0)))
-        if r.is_empty or not r.intersects(clip):
-            continue
-        ir = r & clip
-        if ir.is_empty:
-            continue
-        if ir.width >= cfg.box_min_width and ir.height >= cfg.box_min_height:
-            areas.append(
-                WritingArea(
-                    bbox=BBox(ir.x0, ir.y0, ir.x1, ir.y1, page_1based),
-                    kind="box",
-                )
-            )
-        elif ir.height <= cfg.line_max_height and ir.width >= cfg.line_min_width:
-            areas.append(
-                WritingArea(
-                    bbox=BBox(ir.x0, ir.y0, ir.x1, ir.y1, page_1based),
-                    kind="lines",
-                )
-            )
-    return areas
 
 
 def _padded_crop_rect(page: fitz.Page, core: fitz.Rect, clip: fitz.Rect, pad: float) -> fitz.Rect:
@@ -321,10 +296,10 @@ def strip_question_tree_stems(q: Question) -> None:
 
 
 def normalize_multiple_choice_tree(q: Question) -> None:
-    """MC parts use the exercise region for ticks/circles — drop ruled boxes and answer bands."""
+    """MC parts use the exercise region for ticks/circles — drop ruled boxes."""
     if q.question_type == "multiple_choice":
         q.writing_areas.clear()
-        q.answer_field_bbox = None
+        q.equation_blank_bboxes.clear()
     for sq in q.subquestions:
         normalize_multiple_choice_tree(sq)
 
@@ -466,3 +441,82 @@ def infer_answer_fields(full_text: str) -> tuple[str | None, str | None]:
 
 def safe_image_stem(qid: str) -> str:
     return re.sub(r"[^\w\-]", "_", qid)
+
+
+def adjust_leaf_bboxes_after_previous_exercise(
+    doc: fitz.Document,
+    cfg: ParserConfig,
+    questions: list[Question],
+) -> None:
+    """Pull each non-first leaf bbox.y0 down to sit just below the previous exercise's last line.
+
+    Groups leaf questions by layout cell, sorts by y0, then for each leaf after the first
+    in that cell scans the PDF text above it (skipping ``[Total: …]`` and Cambridge sheet
+    label lines) to find the last printed line's bottom edge and sets bbox.y0 = that y1 + gap.
+
+    After adjusting all bboxes, re-runs ``assign_answer_field_bboxes`` so
+    ``equation_blank_bboxes`` reflect the updated regions.
+    """
+    from collections import defaultdict
+    from pipeline.pdf_parser.answer_fields import assign_answer_field_bboxes
+    from pipeline.pdf_parser.layout import cell_for_point
+    from pipeline.pdf_parser.regions import clip_horizontal_bounds
+
+    leaves: list[Question] = [q for q in flatten_questions(questions) if not q.subquestions]
+
+    page_cache: dict[int, fitz.Page] = {}
+    cell_groups: dict[tuple, list[Question]] = defaultdict(list)
+
+    for q in leaves:
+        pi = q.bbox.page - 1
+        if pi < 0 or pi >= len(doc):
+            continue
+        if pi not in page_cache:
+            page_cache[pi] = doc[pi]
+        page = page_cache[pi]
+        cx = (q.bbox.x0 + q.bbox.x1) * 0.5
+        cy = (q.bbox.y0 + q.bbox.y1) * 0.5
+        cell = cell_for_point(page, cx, cy)
+        key = (pi, round(cell.x0), round(cell.y0), round(cell.x1), round(cell.y1))
+        cell_groups[key].append(q)
+
+    gap = cfg.leaf_bbox_gap_after_previous_line_pt
+
+    for key, group in cell_groups.items():
+        pi = key[0]
+        page = page_cache[pi]
+        group.sort(key=lambda q: (q.bbox.y0, q.bbox.x0))
+
+        for i, q in enumerate(group):
+            if i == 0:
+                continue
+            cx = (q.bbox.x0 + q.bbox.x1) * 0.5
+            cy = (q.bbox.y0 + q.bbox.y1) * 0.5
+            cell = cell_for_point(page, cx, cy)
+            h0, h1 = clip_horizontal_bounds(doc, pi, cfg, cell)
+
+            band = fitz.Rect(h0, float(cell.y0), h1, q.bbox.y0)
+            last_y1 = float(cell.y0)
+            for block in page.get_text("dict", clip=band)["blocks"]:
+                if block["type"] != 0:
+                    continue
+                for line in block["lines"]:
+                    bb = line["bbox"]
+                    if bb[3] > q.bbox.y0:
+                        continue
+                    t = "".join(s["text"] for s in line["spans"]).strip()
+                    if not t:
+                        continue
+                    if re.match(r"^\[Total:", t, re.I):
+                        continue
+                    if _RE_EXAM_SHEET_LABEL_LINE.search(t):
+                        continue
+                    if bb[3] > last_y1:
+                        last_y1 = float(bb[3])
+
+            new_y0 = last_y1 + gap
+            if new_y0 < q.bbox.y0:
+                q.bbox = BBox(q.bbox.x0, new_y0, q.bbox.x1, q.bbox.y1, q.bbox.page)
+
+    for q in questions:
+        assign_answer_field_bboxes(doc, cfg, q)

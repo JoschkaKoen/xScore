@@ -278,6 +278,26 @@ def maybe_split_written_subquestions(
         parts.extend(ln.text for ln in seg_lines[1:])
         return seg_lines, "\n".join(parts).strip()
 
+    def _segment_y1_for_page(page_1based: int) -> float:
+        """Bottom y of the question's region on *page_1based* (from the raw segments)."""
+        for pidx, y0, y1, cell, _pr, _nx1, _st, _sb in segs:
+            if pidx + 1 == page_1based:
+                return float(y1)
+        return q.bbox.y1
+
+    def _extend_subpart_bbox_to_next_anchor(bb: BBox, next_a: SubAnchor | None) -> BBox:
+        """Stretch *bb* so its bottom reaches the top of *next_a* (same page) or the
+        segment bottom (different page).  Only ever extends, never shrinks."""
+        if next_a is None:
+            return bb
+        if next_a.page == bb.page:
+            new_y1 = max(bb.y1, next_a.y0)
+        else:
+            new_y1 = max(bb.y1, _segment_y1_for_page(bb.page))
+        if new_y1 <= bb.y1:
+            return bb
+        return BBox(bb.x0, bb.y0, bb.x1, new_y1, bb.page)
+
     anchor_nodes: dict[int, Question] = {}
     root_children: list[Question] = []
 
@@ -287,6 +307,8 @@ def maybe_split_written_subquestions(
             continue
         page = seg_lines[0].page
         bb = _bbox_union_lines(seg_lines, page) or q.bbox
+        next_a = anchors[ai + 1] if ai + 1 < n else None
+        bb = _extend_subpart_bbox_to_next_anchor(bb, next_a)
         bb = expand_bbox_to_subpage_width(doc, bb)
         sq = Question(
             number="",

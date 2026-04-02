@@ -32,7 +32,7 @@ from pipeline.pdf_parser.content import normalize_multiple_choice_tree
 from pipeline.scaffold_overlay import write_scaffold_boxes_pdf
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 14
 
 
 def _find_exam_pdf(folder: Path) -> Path:
@@ -57,8 +57,8 @@ def _find_answer_pdf(folder: Path) -> Path | None:
 # JSON (de)serialization
 # ---------------------------------------------------------------------------
 
-# Keep cache JSON readable: no more than this many fractional digits for coordinates.
-_JSON_COORD_DECIMALS = 4
+# Keep cache JSON readable: 1 fractional digit is sufficient for PDF-point coordinates.
+_JSON_COORD_DECIMALS = 1
 
 
 def _round_coord(v: float) -> float:
@@ -102,7 +102,7 @@ def _wa_from_dict(d: dict) -> WritingArea:
 
 
 def question_to_dict(q: Question) -> dict[str, Any]:
-    """Serialize for cache JSON; omit nulls, empty collections, and redundant answer fields."""
+    """Serialize for cache JSON; omit nulls and empty collections (sparse)."""
     opts_dicts = [{"letter": o.letter, "text": o.text} for o in q.answer_options]
     d: dict[str, Any] = {
         "number": q.number,
@@ -113,8 +113,8 @@ def question_to_dict(q: Question) -> dict[str, Any]:
     }
     if opts_dicts:
         d["answer_options"] = opts_dicts
-    if q.answer_field_bbox is not None:
-        d["answer_field_bbox"] = _bbox_to_dict(q.answer_field_bbox)
+    if q.equation_blank_bboxes:
+        d["equation_blank_bboxes"] = [_bbox_to_dict(b) for b in q.equation_blank_bboxes]
     if q.images:
         d["images"] = [_img_to_dict(i) for i in q.images]
     if q.writing_areas:
@@ -145,6 +145,7 @@ def question_from_dict(d: dict) -> Question:
     ]
     ca = d.get("correct_answer")
     if ca is None or (isinstance(ca, str) and not str(ca).strip()):
+        # Migrate older caches that stored answer_key_text instead of correct_answer
         leg = d.get("answer_key_text")
         if leg and str(leg).strip():
             ca = str(leg).strip()
@@ -154,16 +155,13 @@ def question_from_dict(d: dict) -> Question:
         text=text,
         marks=int(d.get("marks", 1)),
         bbox=_bbox_from_dict(bbox_d),
-        answer_field_bbox=(
-            _bbox_from_dict(d["answer_field_bbox"]) if d.get("answer_field_bbox") else None
-        ),
+        equation_blank_bboxes=[_bbox_from_dict(x) for x in d.get("equation_blank_bboxes") or []],
         images=[_img_from_dict(x) for x in d.get("images") or []],
         writing_areas=[_wa_from_dict(x) for x in d.get("writing_areas") or []],
         subquestions=[question_from_dict(s) for s in d.get("subquestions") or []],
         correct_answer=ca,
         marking_criteria=d.get("marking_criteria"),
         answer_images=[_img_from_dict(x) for x in d.get("answer_images") or []],
-        answer_key_text=None,
         answer_options=ao,
     )
 

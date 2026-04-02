@@ -7,10 +7,10 @@ from pathlib import Path
 
 import fitz
 
-from pipeline.models import BBox, ExamImage, McAnswerOption, Question, WritingArea
+from pipeline.models import BBox, ExamImage, McAnswerOption, Question
 from pipeline.pdf_parser.config import ParserConfig
 from pipeline.pdf_parser.content import (
-    detect_writing_areas,
+    adjust_leaf_bboxes_after_previous_exercise,
     extract_images,
     infer_marks,
     infer_question_type,
@@ -52,7 +52,6 @@ def build_questions_from_segments(
         segs = by_q[qid]
         text_parts: list[str] = []
         all_images: list[ExamImage] = []
-        all_areas: list[WritingArea] = []
         first_bbox: BBox | None = None
         stem_base = safe_image_stem(qid)
 
@@ -73,14 +72,6 @@ def build_questions_from_segments(
             chunk = page.get_text("text", clip=text_clip).strip()
             if chunk:
                 text_parts.append(chunk)
-
-            for wa in detect_writing_areas(page, clip, page_1, cfg):
-                all_areas.append(
-                    WritingArea(
-                        bbox=expand_bbox_to_subpage_width(doc, wa.bbox),
-                        kind=wa.kind,
-                    )
-                )
 
             stem = f"q{stem_base}_p{page_1}"
             for im in extract_images(
@@ -111,16 +102,22 @@ def build_questions_from_segments(
             answer_options=answer_opts,
             bbox=first_bbox or BBox(0, 0, 0, 0, 1),
             images=all_images,
-            writing_areas=all_areas,
             subquestions=[],
         )
         q = maybe_split_written_subquestions(q, doc, segs, cfg)
         strip_question_tree_stems(q)
-        assign_answer_field_bboxes(doc, cfg, q)
-        normalize_multiple_choice_tree(q)
+        # Snaps must run before answer-field inference so the final leaf bboxes
+        # (including the last leaf in each cell, stretched to the cell bottom) are
+        # in place when equation-blank detection scans for "label = …… [n]" lines.
         apply_subpage_vertical_snaps(
             doc, cfg, q, segs[0][3], segs[0][6], segs[-1][7]
         )
+        normalize_multiple_choice_tree(q)
+        assign_answer_field_bboxes(doc, cfg, q)
         questions.append(q)
+
+    # Pull each non-first leaf bbox.y0 to sit just below the previous exercise's
+    # last text line, then re-infer equation blanks on the updated bboxes.
+    adjust_leaf_bboxes_after_previous_exercise(doc, cfg, questions)
 
     return questions
