@@ -137,7 +137,7 @@ def load_ground_truth(
     if not q_numbers:
         n_cols = max(len(split_line(ln)) - 1 for ln in data_lines)
         if scaffold is not None:
-            q_numbers = [q.number for q in scaffold.questions[:n_cols]]
+            q_numbers = [q.number for q in scaffold.gradable_questions[:n_cols]]
         else:
             q_numbers = [str(i + 1) for i in range(n_cols)]
 
@@ -185,7 +185,7 @@ def evaluate_results(
     from extraction.ground_truth import fuzzy_match_name
 
     gt_names = list(ground_truth.keys())
-    q_nums = [q.number for q in scaffold.questions]
+    q_nums = [q.number for q in scaffold.gradable_questions]
 
     per_student = []
     overall_correct = 0

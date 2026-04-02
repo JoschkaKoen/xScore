@@ -89,7 +89,7 @@ def detect_answered_exercises(
     if client is None:
         raise RuntimeError("No Kimi client available for answer detection.")
 
-    question_numbers = [q.number for q in scaffold.questions]
+    question_numbers = [q.number for q in scaffold.gradable_questions]
     prompt = _build_prompt(question_numbers)
 
     print(f"[answer_detection] Rendering {cleaned_pdf.name} at {dpi} DPI …")

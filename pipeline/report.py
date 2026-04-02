@@ -65,7 +65,7 @@ def _pct_color_tex(pct: float, text: str) -> str:
 
 def _scaffold_table(scaffold: ExamScaffold) -> str:
     rows = []
-    for q in scaffold.questions:
+    for q in scaffold.gradable_questions:
         ans = _esc(q.correct_answer or "–")
         rows.append(
             f"    Q{_esc(q.number)} & {_esc(q.question_type.replace('_', ' '))} "
@@ -93,7 +93,7 @@ def _results_table(
     eval_data: dict | None,
 ) -> str:
     """Build the results longtable, colouring cells if GT evaluation is available."""
-    q_nums = [q.number for q in scaffold.questions]
+    q_nums = [q.number for q in scaffold.gradable_questions]
     max_m = results[0].max_marks if results else 0
 
     # Map student name → per-question eval dict
@@ -178,7 +178,7 @@ def _stats_section(results: list[StudentResult]) -> str:
 
 
 def _evaluation_section(eval_data: dict, scaffold: ExamScaffold) -> str:
-    q_nums = [q.number for q in scaffold.questions]
+    q_nums = [q.number for q in scaffold.gradable_questions]
     col_spec = "l " + "c " * len(q_nums) + "r r"
     q_headers = " & ".join(rf"\textbf{{Q{_esc(n)}}}" for n in q_nums)
 

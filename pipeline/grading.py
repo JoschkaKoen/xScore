@@ -221,8 +221,9 @@ def grade_students(
     print(f"[grading] Rendering {cleaned_pdf.name} at {dpi} DPI …")
     all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
 
-    mc_questions = [q for q in scaffold.questions if q.question_type == "multiple_choice"]
-    all_questions = scaffold.questions
+    leaves = scaffold.gradable_questions
+    mc_questions = [q for q in leaves if q.question_type == "multiple_choice"]
+    all_questions = leaves
 
     results: list[StudentResult] = []
 
@@ -264,7 +265,7 @@ def grade_students(
                 time.sleep(0.15)
 
         total = sum(marks_per_q.values())
-        max_marks = sum(q.marks for q in scaffold.questions)
+        max_marks = sum(q.marks for q in scaffold.gradable_questions)
 
         results.append(StudentResult(
             student_name=name,

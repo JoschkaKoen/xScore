@@ -21,6 +21,9 @@ How to run (from repo root, with venv activated and dependencies installed):
     python extract_answers.py --first-students N   # eval first N pages vs ground truth
     python extract_answers.py --skip               # resume from existing JSON
 
+  Activate the virtual environment: 
+    source .venv/bin/activate 
+
   Grade an exam folder from a natural-language prompt (uses Kimi only; KIMI_API_KEY):
     python grade.py "check all multiple choice question answers"
     python grade.py "..." --folder "path/to/exam_folder"

@@ -112,36 +112,34 @@ When you run `grade.py`, it executes these steps in order:
 
 ### How the blank exam is parsed (scaffold, step 4)
 
-The scaffold is the program's internal model of the exam — the list of questions, their types, their marks, and the correct answers. Building it is the most expensive step, so the result is cached.
+The scaffold is the structured model of the exam: questions, geometry, full question text, writing areas, embedded figures, and (from the answer key) correct answers. **No AI is used** to build it — only **PyMuPDF** on vector PDFs (same idea as Exercise Sheet Generator: left-margin question numbers, vertical slices between numbers). Questions are listed in **reading order** (page → column → top to bottom); **printed numbers may be out of order or repeated** on the paper.
 
-**What goes in:** the exam folder must contain two PDFs:
+**What goes in:** the exam folder should contain:
 - A **raw exam PDF** — filename containing `raw` or `exam`, but not `answer` or `scan`
-- An **answer key PDF** — filename containing `answer`
+- An **answer key PDF** (optional) — filename containing `answer`
 
-**How it works (`pipeline/scaffold.py`):**
+**How it works (`pipeline/scaffold.py` + `pipeline/pdf_parser/` package):**
 
-1. **Exam structure pass** — Each page of the blank exam PDF is rendered to a JPEG image (default 200 DPI) and sent to Kimi with a fixed prompt that asks:
-   > *"Identify all questions on this page. For each question return its number, type (`multiple_choice` / `short_answer` / `calculation` / `long_answer`), a brief content summary, and the marks available."*
+1. **Exam PDF** — Detect Cambridge-style question numbers (`get_text("dict")`, left margin, font size band). For each question, compute vertical regions (including multi-page continuations), then extract exact text in each clip, detect large rectangles / ruled lines as **writing areas**, rasterise embedded images to **`scaffold_images/exam/`**.
+2. **Answer key PDF** — Same numbering and regions on the key file. Full text per question is stored as **`answer_key_text`**; **`correct_answer`** / **`marking_criteria`** are derived with simple rules (e.g. single-letter MC lines); diagrams go to **`scaffold_images/answers/`**.
+3. **Merge** — Rows are matched by question number onto the exam `Question` tree (subquestions supported in the data model; detection can be extended later).
+4. **Cache** — `scaffolds/scaffold_cache.json` in the exam folder (a legacy `scaffold_cache.json` at the folder root is still read once and moved). If no `*.pdf` is newer than the cache, the scaffold reloads from JSON (older caches without the new schema are migrated when possible). Rebuild deletes and recreates **`scaffold_images/`**.
 
-   Responses come back as JSON. Questions are deduplicated across pages by question number and assembled into a list of `Question` objects (no answers yet).
+**`build_scaffold(folder, client=None)`** ignores `client` (kept for API compatibility). Grading and page assignment still use Kimi elsewhere.
 
-2. **Answer key pass** — The same page-by-page process runs on the answer key PDF, this time asking:
-   > *"Extract the correct answer and marking criteria for each question. For MC, give the letter. For written questions, give a concise model answer."*
+**Output (`Question` nodes, depth-first via `scaffold.all_questions` for grading):**
 
-   The results are merged into the `Question` objects from step 1 by matching question numbers.
-
-3. **Cache** — The completed scaffold is written to `scaffold_cache.json` in the exam folder. On future runs, if no PDF in that folder has been modified since the cache was written, the cached scaffold is loaded directly — no API calls are made.
-
-**Output:** an `ExamScaffold` containing a list of `Question` objects, each with:
-
-| Field | Example |
-|-------|---------|
-| `number` | `"1"`, `"2a"`, `"38"` |
-| `question_type` | `"multiple_choice"` |
-| `content_summary` | `"Speed calculation using v = d/t"` |
-| `marks` | `2` |
-| `correct_answer` | `"B"` (MC) or model answer text |
-| `marking_criteria` | optional marking notes |
+| Field | Role |
+|-------|------|
+| `number` | Hierarchical label, e.g. `"9"`, `"9a"`, `"9ai"`, `"9aii"`, or `"38_2"` for a second “38” in a column — **not** re-sorted by digit value |
+| `question_type` | `multiple_choice`, `short_answer`, etc. |
+| `text` | Full extracted stem from the exam PDF |
+| `marks` | Parsed from `[N marks]` / similar |
+| `bbox` | PDF points, page (1-based) |
+| `images` / `writing_areas` | Embedded figures and answer-box geometry |
+| `answer_key_text` | Full text region from the answer key |
+| `correct_answer` / `marking_criteria` | Filled from the key |
+| `answer_images` | Images extracted from the key |
 
 ---
 
@@ -180,7 +178,7 @@ extract_answers.py   Profile-based extraction CLI
 grade.py             Prompt-driven grading CLI
 config.py            Models, DPI, paths, and all tunables
 extraction/          Profiles, AI providers, eval, reporting
-pipeline/            Folder discovery, scaffold, grading, reports
+pipeline/            Folder discovery, pdf_parser (vector scaffold), grading, reports
 AGENTS.md            Deep reference for maintainers and agents
 ```
 

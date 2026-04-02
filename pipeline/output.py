@@ -31,12 +31,16 @@ def _pct_color(pct: float) -> str:
 
 def print_scaffold_summary(scaffold: ExamScaffold) -> None:
     print(f"\n{'═' * 60}")
-    print(f"  EXAM SCAFFOLD  —  {len(scaffold.questions)} questions, {scaffold.total_marks} total marks")
+    leaves = scaffold.gradable_questions
+    print(
+        f"  EXAM SCAFFOLD  —  {len(scaffold.questions)} top-level, "
+        f"{len(leaves)} gradable parts, {scaffold.total_marks} total marks"
+    )
     print(f"{'═' * 60}")
     col_w = (55 - 10 - 20 - 8) // 2
     print(f"  {'#':<6} {'Type':<20} {'Marks':>5}  {'Answer':<15}")
     print(f"  {_bar(56)}")
-    for q in scaffold.questions:
+    for q in leaves:
         ans = q.correct_answer or "–"
         print(f"  Q{q.number:<5} {q.question_type:<20} {q.marks:>5}  {ans:<15}")
     print(f"{'═' * 60}\n")
@@ -94,7 +98,7 @@ def print_results_table(results: list[StudentResult], scaffold: ExamScaffold) ->
         print("  No results to display.")
         return
 
-    q_nums = [q.number for q in scaffold.questions]
+    q_nums = [q.number for q in scaffold.gradable_questions]
     max_name = max((len(r.student_name) for r in results), default=10)
     col_w = 5  # per-question column width
 
@@ -139,7 +143,7 @@ def print_evaluation_summary(eval_data: dict, scaffold: ExamScaffold) -> None:
     print(f"  Overall accuracy: {color}{overall_str}{Colors.RESET}")
     print()
 
-    q_nums = [q.number for q in scaffold.questions]
+    q_nums = [q.number for q in scaffold.gradable_questions]
     max_name = max((len(r["name"]) for r in eval_data["per_student"]), default=10)
 
     # Header

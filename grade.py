@@ -14,7 +14,7 @@ The program will:
   1. Parse the natural language prompt into structured instructions (via Kimi).
   2. Locate the exam folder.
   3. Read the student roster from StudentList.xlsx.
-  4. Build an exam scaffold by AI-analysing the raw exam + answer key PDFs.
+  4. Build an exam scaffold by parsing vector exam + answer-key PDFs (PyMuPDF).
   5. Clean the scan PDF (auto-rotate + blank removal).
   6. Identify which pages belong to which student.
   7. Detect which exercises each student attempted.
@@ -26,12 +26,39 @@ The program will:
 from __future__ import annotations
 
 import argparse
+import datetime
+import re
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from version import __version__
+
+
+class _Tee:
+    """Duplicate stdout to a log file, stripping ANSI colour codes from the file."""
+
+    def __init__(self, log_path: Path) -> None:
+        self._stdout = sys.stdout
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._log = log_path.open("w", encoding="utf-8")
+
+    def write(self, text: str) -> int:
+        self._stdout.write(text)
+        self._log.write(re.sub(r"\x1b\[[0-9;]*m", "", text))
+        return len(text)
+
+    def flush(self) -> None:
+        self._stdout.flush()
+        self._log.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+    def close(self) -> None:
+        sys.stdout = self._stdout
+        self._log.close()
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,6 +113,20 @@ def main() -> None:
     load_dotenv()
     args = parse_args()
 
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_path = Path("logs") / f"{timestamp}.log"
+    tee = _Tee(log_path)
+    sys.stdout = tee
+    print(f"[grade] Log: {log_path}")
+
+    try:
+        _run(args, timestamp)
+    finally:
+        tee.flush()
+        tee.close()
+
+
+def _run(args: argparse.Namespace, timestamp: str) -> None:
     # Late imports after dotenv so env vars are available
     from extraction.providers.kimi import KimiProvider
 
@@ -139,6 +180,11 @@ def main() -> None:
         cli_override=args.folder,
     )
     print(f"[grade] Exam folder: {folder}")
+
+    stem = folder.name.replace(" ", "_")
+    run_dir = Path(args.output_dir) / f"{timestamp}_{stem}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[grade] Run output:  {run_dir}")
 
     # ------------------------------------------------------------------ #
     # Step 4: Read student list                                           #
@@ -230,10 +276,8 @@ def main() -> None:
     # Step 11: PDF report                                                 #
     # ------------------------------------------------------------------ #
     if not args.no_report:
-        output_dir = Path(args.output_dir)
-        stem = folder.name.replace(" ", "_")
-        output_tex = output_dir / f"{stem}_grade_report.tex"
-        output_pdf = output_dir / f"{stem}_grade_report.pdf"
+        output_tex = run_dir / "grade_report.tex"
+        output_pdf = run_dir / "grade_report.pdf"
         title = f"{folder.name} — Grading Report"
         generate_report(
             scaffold=scaffold,

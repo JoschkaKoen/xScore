@@ -21,20 +21,86 @@ class TaskInstruction:
 
 
 @dataclass
+class BBox:
+    """Bounding box in PDF points; *page* is 1-based (first page = 1)."""
+
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    page: int
+
+
+@dataclass
+class ExamImage:
+    bbox: BBox
+    path: str
+
+
+@dataclass
+class WritingArea:
+    bbox: BBox
+    kind: str  # "box" | "lines"
+
+
+@dataclass
 class Question:
-    number: str                 # "1", "2a", "38"
+    number: str                 # hierarchical label: "9", "9a", "9ai", "9aii"; duplicate mains "38_2"
     question_type: str          # "multiple_choice" | "short_answer" | "calculation" | "long_answer"
-    content_summary: str
+    text: str                   # full extracted stem text from the exam PDF
     marks: int
+    bbox: BBox                  # primary region (first segment of multi-page questions)
+    images: list[ExamImage] = field(default_factory=list)
+    writing_areas: list[WritingArea] = field(default_factory=list)
+    subquestions: list[Question] = field(default_factory=list)
     correct_answer: str | None = None
     marking_criteria: str | None = None
+    answer_images: list[ExamImage] = field(default_factory=list)
+    answer_key_text: str | None = None  # full raw text from answer-key PDF
+
+    @property
+    def content_summary(self) -> str:
+        """Backward compatibility: first line or truncated text."""
+        line = self.text.strip().split("\n", 1)[0].strip()
+        return line[:200] + ("…" if len(line) > 200 else "")
+
+
+def flatten_questions(questions: list[Question]) -> list[Question]:
+    """Depth-first list of this node and all nested subquestions."""
+    out: list[Question] = []
+    for q in questions:
+        out.append(q)
+        out.extend(flatten_questions(q.subquestions))
+    return out
+
+
+def gradable_questions(questions: list[Question]) -> list[Question]:
+    """Leaf questions only (parts that carry marks); skips parent nodes that have subquestions."""
+    out: list[Question] = []
+    for q in questions:
+        if q.subquestions:
+            out.extend(gradable_questions(q.subquestions))
+        else:
+            out.append(q)
+    return out
 
 
 @dataclass
 class ExamScaffold:
     questions: list[Question]
     total_marks: int
-    raw_description: str        # AI's full text description, kept for debugging
+    page_count: int = 0
+    raw_description: str = ""
+
+    @property
+    def all_questions(self) -> list[Question]:
+        """Every scaffold node in document reading order (parents and nested subparts)."""
+        return flatten_questions(self.questions)
+
+    @property
+    def gradable_questions(self) -> list[Question]:
+        """Leaf parts only — use for summing exam marks and per-part grading."""
+        return gradable_questions(self.questions)
 
 
 @dataclass
