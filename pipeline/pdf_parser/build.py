@@ -7,15 +7,24 @@ from pathlib import Path
 
 import fitz
 
-from pipeline.models import BBox, ExamImage, Question, WritingArea
+from pipeline.models import BBox, ExamImage, McAnswerOption, Question, WritingArea
 from pipeline.pdf_parser.config import ParserConfig
 from pipeline.pdf_parser.content import (
     detect_writing_areas,
     extract_images,
     infer_marks,
     infer_question_type,
+    normalize_multiple_choice_tree,
     safe_image_stem,
+    split_mc_options_from_stem,
     strip_question_tree_stems,
+)
+from pipeline.pdf_parser.answer_fields import assign_answer_field_bboxes
+from pipeline.pdf_parser.layout import (
+    apply_subpage_vertical_snaps,
+    cell_margin_band,
+    cell_scales,
+    expand_bbox_to_subpage_width,
 )
 from pipeline.pdf_parser.regions import clip_for_segment, clip_for_text_segment
 from pipeline.pdf_parser.subparts import maybe_split_written_subquestions
@@ -23,16 +32,18 @@ from pipeline.pdf_parser.subparts import maybe_split_written_subquestions
 
 def build_questions_from_segments(
     doc: fitz.Document,
-    segments: list[tuple[str, int, float, float, fitz.Rect, int, float]],
+    segments: list[tuple[str, int, float, float, fitz.Rect, int, float, bool, bool]],
     exam_folder: Path,
     cfg: ParserConfig,
 ) -> list[Question]:
-    by_q: dict[str, list[tuple[int, float, float, fitz.Rect, int, float]]] = defaultdict(list)
+    by_q: dict[str, list[tuple[int, float, float, fitz.Rect, int, float, bool, bool]]] = defaultdict(
+        list
+    )
     order: list[str] = []
-    for qid, pidx, y0, y1, cell, printed_raw, num_x1 in segments:
+    for qid, pidx, y0, y1, cell, printed_raw, num_x1, snap_top, snap_bottom in segments:
         if qid not in order:
             order.append(qid)
-        by_q[qid].append((pidx, y0, y1, cell, printed_raw, num_x1))
+        by_q[qid].append((pidx, y0, y1, cell, printed_raw, num_x1, snap_top, snap_bottom))
 
     img_counter = [0]
     questions: list[Question] = []
@@ -45,10 +56,16 @@ def build_questions_from_segments(
         first_bbox: BBox | None = None
         stem_base = safe_image_stem(qid)
 
-        for pidx, y0, y1, cell, printed_raw, num_x1 in segs:
+        for pidx, y0, y1, cell, printed_raw, num_x1, snap_top, snap_bottom in segs:
             page = doc[pidx]
-            clip = clip_for_segment(doc, pidx, y0, y1, cfg, cell)
-            text_clip = clip_for_text_segment(doc, pidx, y0, y1, cfg, cell, num_x1)
+            y0c = float(cell.y0) if snap_top else y0
+            y1c = float(cell.y1) if snap_bottom else y1
+            clip = clip_for_segment(doc, pidx, y0c, y1c, cfg, cell)
+            mt, _mb = cell_margin_band(cell, cfg)
+            _sx, sy = cell_scales(cell)
+            pad_above = min(cfg.padding_above * sy, cfg.text_clip_pad_above_pt * sy)
+            text_y0 = max(y0 - pad_above, mt)
+            text_clip = clip_for_text_segment(doc, pidx, text_y0, y1, cfg, cell, num_x1)
             page_1 = pidx + 1
             if first_bbox is None:
                 first_bbox = BBox(clip.x0, clip.y0, clip.x1, clip.y1, page_1)
@@ -57,21 +74,41 @@ def build_questions_from_segments(
             if chunk:
                 text_parts.append(chunk)
 
-            all_areas.extend(detect_writing_areas(page, clip, page_1, cfg))
+            for wa in detect_writing_areas(page, clip, page_1, cfg):
+                all_areas.append(
+                    WritingArea(
+                        bbox=expand_bbox_to_subpage_width(doc, wa.bbox),
+                        kind=wa.kind,
+                    )
+                )
 
             stem = f"q{stem_base}_p{page_1}"
-            imgs = extract_images(page, clip, exam_folder, "exam", stem, page_1, img_counter)
-            all_images.extend(imgs)
+            for im in extract_images(
+                page, clip, exam_folder, "exam", stem, page_1, img_counter, cfg
+            ):
+                all_images.append(
+                    ExamImage(
+                        bbox=expand_bbox_to_subpage_width(doc, im.bbox),
+                        path=im.path,
+                    )
+                )
 
         full_text = "\n\n".join(text_parts).strip()
         marks = infer_marks(full_text)
         qtype = infer_question_type(full_text)
+        stem_text = full_text
+        answer_opts: list[McAnswerOption] = []
+        if qtype == "multiple_choice":
+            stem_text, answer_opts = split_mc_options_from_stem(full_text)
+            if not answer_opts:
+                stem_text = full_text
 
         q = Question(
             number=qid,
             question_type=qtype,
-            text=full_text,
+            text=stem_text,
             marks=marks,
+            answer_options=answer_opts,
             bbox=first_bbox or BBox(0, 0, 0, 0, 1),
             images=all_images,
             writing_areas=all_areas,
@@ -79,6 +116,11 @@ def build_questions_from_segments(
         )
         q = maybe_split_written_subquestions(q, doc, segs, cfg)
         strip_question_tree_stems(q)
+        assign_answer_field_bboxes(doc, cfg, q)
+        normalize_multiple_choice_tree(q)
+        apply_subpage_vertical_snaps(
+            doc, cfg, q, segs[0][3], segs[0][6], segs[-1][7]
+        )
         questions.append(q)
 
     return questions

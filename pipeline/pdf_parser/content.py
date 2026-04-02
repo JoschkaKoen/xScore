@@ -7,8 +7,64 @@ from pathlib import Path
 
 import fitz
 
-from pipeline.models import BBox, ExamImage, Question, WritingArea
-from pipeline.pdf_parser.config import ParserConfig
+from pipeline.models import BBox, ExamImage, McAnswerOption, Question, WritingArea
+from pipeline.pdf_parser.config import DEFAULT_PARSER_CONFIG, ParserConfig
+
+# Printed figure captions (exclude from vector-figure raster union).
+_RE_FIG_CAPTION_LINE = re.compile(r"^Fig(?:\.|ure)?\b", re.I)
+
+# PDF private-use glyph for multiplication (often shows as ""); map to ASCII "x".
+_PDF_PUA_MULTIPLY = "\uf0b4"
+# Small left→right arrow from Symbol / Wingdings-style PUA (often "" in extracted text).
+_PDF_PUA_ARROW_RIGHT = "\uf0ae"
+_PDF_PUA_ARROW_RIGHT_ALT = "\uf0ee"
+
+
+def normalize_pdf_multiplication_glyph(text: str) -> str:
+    """Replace the common PDF multiplication PUA character (U+F0B4) with ASCII ``x``."""
+    if not text:
+        return text
+    return text.replace(_PDF_PUA_MULTIPLY, "x")
+
+
+def normalize_pdf_arrow_glyph(text: str) -> str:
+    """Replace PDF PUA arrow glyphs with Unicode ``→`` (U+2192)."""
+    if not text:
+        return text
+    t = text.replace(_PDF_PUA_ARROW_RIGHT, "→")
+    return t.replace(_PDF_PUA_ARROW_RIGHT_ALT, "→")
+
+
+# En dash, hyphen-minus, minus sign — used before negative exponents in extracted PDF text.
+_RE_SCI_EXPONENT_DASH = r"[–\-−\u2212]"
+
+
+def normalize_scientific_powers_of_ten(text: str) -> str:
+    """Turn ``x 10…`` / ``x 10–n`` (after ``x`` is normalized) into ``x 10^…``.
+
+    Cambridge-style papers often omit the caret: ``1.5 x 1011`` → ``1.5 x 10^11``,
+    ``2.3 x 10–18`` → ``2.3 x 10^-18``.
+    """
+    if not text:
+        return text
+    t = text
+    t = re.sub(
+        rf"x\s*10\s*{_RE_SCI_EXPONENT_DASH}\s*(\d+)",
+        r"x 10^-\1",
+        t,
+    )
+    t = re.sub(r"x\s*10\s*(\d+)(?=\D|$)", r"x 10^\1", t)
+    return t
+
+
+def normalize_exam_scientific_text(text: str) -> str:
+    """PUA multiply → ``x``, PUA arrow → ``→``, Unicode ``×`` → ``x``, then ``10^n`` fix."""
+    if not text:
+        return text
+    t = normalize_pdf_multiplication_glyph(text)
+    t = normalize_pdf_arrow_glyph(t)
+    t = t.replace("×", "x")
+    return normalize_scientific_powers_of_ten(t)
 
 
 def detect_writing_areas(
@@ -39,6 +95,81 @@ def detect_writing_areas(
     return areas
 
 
+def _padded_crop_rect(page: fitz.Page, core: fitz.Rect, clip: fitz.Rect, pad: float) -> fitz.Rect:
+    """Expand *core* by *pad* on all sides, clamped to page and intersected with *clip*."""
+    pr = page.rect
+    expanded = fitz.Rect(
+        max(pr.x0, core.x0 - pad),
+        max(pr.y0, core.y0 - pad),
+        min(pr.x1, core.x1 + pad),
+        min(pr.y1, core.y1 + pad),
+    )
+    return expanded & clip
+
+
+def _vector_figure_rects_in_clip(page: fitz.Page, clip: fitz.Rect, cfg: ParserConfig) -> list[fitz.Rect]:
+    """Drawing bboxes that look like compact figures (not margin rules or answer lines)."""
+    out: list[fitz.Rect] = []
+    for d in page.get_drawings():
+        r = fitz.Rect(d.get("rect", (0, 0, 0, 0)))
+        if r.is_empty or not r.intersects(clip):
+            continue
+        ir = r & clip
+        w, h = ir.width, ir.height
+        if w < 1.0 or h < 1.0:
+            continue
+        if min(w, h) < cfg.vector_figure_min_short_side:
+            continue
+        area = ir.get_area()
+        if area < cfg.vector_figure_min_area:
+            continue
+        long_side = max(w, h)
+        short_side = min(w, h)
+        aspect = long_side / max(short_side, 0.01)
+        if aspect > cfg.vector_figure_max_aspect:
+            continue
+        out.append(ir)
+    return out
+
+
+def _vector_figure_core_with_nearby_labels(
+    page: fitz.Page, clip: fitz.Rect, figure: fitz.Rect, cfg: ParserConfig
+) -> fitz.Rect:
+    """Expand vector *figure* bbox to include short text lines in a padded band (e.g. A, B, Sun).
+
+    Omits lines that look like figure captions (``Fig. 10.1``) so they are not in the crop.
+    """
+    hx = cfg.vector_figure_label_h_pad_pt
+    vy0 = cfg.vector_figure_label_v_pad_top_pt
+    vy1 = cfg.vector_figure_label_v_pad_bottom_pt
+    search = fitz.Rect(
+        max(clip.x0, figure.x0 - hx),
+        max(clip.y0, figure.y0 - vy0),
+        min(clip.x1, figure.x1 + hx),
+        min(clip.y1, figure.y1 + vy1),
+    ) & clip
+    if search.is_empty:
+        return figure
+    core = figure
+    max_chars = cfg.vector_figure_label_max_line_chars
+    for block in page.get_text("dict", clip=clip)["blocks"]:
+        if block["type"] != 0:
+            continue
+        for line in block["lines"]:
+            if not line["spans"]:
+                continue
+            r = fitz.Rect(line["bbox"])
+            if r.is_empty or not r.intersects(search):
+                continue
+            text = "".join(s["text"] for s in line["spans"]).strip()
+            if not text or len(text) > max_chars:
+                continue
+            if _RE_FIG_CAPTION_LINE.match(text):
+                continue
+            core |= r
+    return core
+
+
 def extract_images(
     page: fitz.Page,
     clip: fitz.Rect,
@@ -47,7 +178,9 @@ def extract_images(
     stem: str,
     page_1based: int,
     img_counter: list[int],
+    cfg: ParserConfig | None = None,
 ) -> list[ExamImage]:
+    cfg = cfg or DEFAULT_PARSER_CONFIG
     out_dir = exam_folder / "scaffold_images" / subdir
     out_dir.mkdir(parents=True, exist_ok=True)
     found: list[ExamImage] = []
@@ -61,21 +194,50 @@ def extract_images(
             if not r.intersects(clip):
                 continue
             ir = r & clip
+            crop = _padded_crop_rect(page, ir, clip, cfg.image_crop_pad_pt)
+            if crop.is_empty:
+                continue
             img_counter[0] += 1
             name = f"{stem}_{img_counter[0]}.png"
             abs_path = out_dir / name
             try:
-                pix = page.get_pixmap(clip=ir, dpi=150)
+                pix = page.get_pixmap(clip=crop, dpi=150)
                 pix.save(str(abs_path))
             except Exception:
+                img_counter[0] -= 1
                 continue
             rel = f"scaffold_images/{subdir}/{name}"
             found.append(
                 ExamImage(
-                    bbox=BBox(ir.x0, ir.y0, ir.x1, ir.y1, page_1based),
+                    bbox=BBox(crop.x0, crop.y0, crop.x1, crop.y1, page_1based),
                     path=rel,
                 )
             )
+
+    if not found and cfg.vector_figure_fallback:
+        cands = _vector_figure_rects_in_clip(page, clip, cfg)
+        if cands:
+            best = max(cands, key=lambda z: z.get_area())
+            core = _vector_figure_core_with_nearby_labels(page, clip, best, cfg)
+            crop = _padded_crop_rect(page, core, clip, cfg.image_crop_pad_pt)
+            if not crop.is_empty:
+                img_counter[0] += 1
+                name = f"{stem}_{img_counter[0]}.png"
+                abs_path = out_dir / name
+                try:
+                    pix = page.get_pixmap(clip=crop, dpi=150)
+                    pix.save(str(abs_path))
+                except Exception:
+                    img_counter[0] -= 1
+                else:
+                    rel = f"scaffold_images/{subdir}/{name}"
+                    found.append(
+                        ExamImage(
+                            bbox=BBox(crop.x0, crop.y0, crop.x1, crop.y1, page_1based),
+                            path=rel,
+                        )
+                    )
+
     return found
 
 
@@ -134,10 +296,21 @@ def strip_exam_mark_indicators(text: str) -> str:
 
 
 def strip_question_tree_stems(q: Question) -> None:
-    """Apply :func:`strip_exam_mark_indicators` to *q* and every nested subquestion."""
-    q.text = strip_exam_mark_indicators(q.text)
+    """Apply :func:`strip_exam_mark_indicators`, multiply glyph cleanup, and ``10^n`` text fix."""
+    q.text = normalize_exam_scientific_text(strip_exam_mark_indicators(q.text))
+    for opt in q.answer_options:
+        opt.text = normalize_exam_scientific_text(opt.text)
     for sq in q.subquestions:
         strip_question_tree_stems(sq)
+
+
+def normalize_multiple_choice_tree(q: Question) -> None:
+    """MC parts use the exercise region for ticks/circles — drop ruled boxes and answer bands."""
+    if q.question_type == "multiple_choice":
+        q.writing_areas.clear()
+        q.answer_field_bbox = None
+    for sq in q.subquestions:
+        normalize_multiple_choice_tree(sq)
 
 
 def rollup_question_marks(q: Question) -> int:
@@ -149,9 +322,100 @@ def rollup_question_marks(q: Question) -> int:
     return s
 
 
+def _mc_options_block_start_index(lines: list[str]) -> int | None:
+    """Index of line with ``A`` (alone) when ``B`` and ``C`` appear as letter lines below."""
+    for i, ln in enumerate(lines):
+        if not re.fullmatch(r"\s*A\s*", ln, re.I):
+            continue
+        tail = lines[i + 1 :]
+        has_b = any(re.fullmatch(r"\s*B\s*", x, re.I) for x in tail)
+        has_c = any(re.fullmatch(r"\s*C\s*", x, re.I) for x in tail)
+        if has_b and has_c:
+            return i
+    return None
+
+
+def _is_mc_footer_line(ln: str) -> bool:
+    t = ln.strip()
+    if not t:
+        return False
+    if re.match(r"^IGCSE\s+Physics", t, re.I):
+        return True
+    if "permission to reproduce" in t.lower():
+        return True
+    return False
+
+
+def _normalize_option_body(parts: list[str]) -> str:
+    s = " ".join(x.strip() for x in parts if x.strip())
+    s = re.sub(r"\s+", " ", s).strip()
+    return normalize_exam_scientific_text(s)
+
+
+def split_mc_options_from_stem(raw: str) -> tuple[str, list[McAnswerOption]]:
+    """Split Cambridge-style MC (letter on its own line) into stem and options.
+
+    Returns ``(stem, options)``; if no recognizable block, ``(raw, [])``.
+    """
+    if not raw or not raw.strip():
+        return raw, []
+    lines = raw.splitlines()
+    start = _mc_options_block_start_index(lines)
+    if start is None:
+        return raw, []
+    stem = "\n".join(lines[:start]).strip()
+    options: list[McAnswerOption] = []
+    letter: str | None = None
+    buf: list[str] = []
+    for ln in lines[start:]:
+        if _is_mc_footer_line(ln):
+            break
+        m = re.fullmatch(r"\s*([A-D])\s*", ln, re.I)
+        if m:
+            if letter is not None:
+                body = _normalize_option_body(buf)
+                if body:
+                    options.append(McAnswerOption(letter=letter, text=body))
+            letter = m.group(1).upper()
+            buf = []
+        else:
+            buf.append(ln)
+    if letter is not None:
+        body = _normalize_option_body(buf)
+        if body:
+            options.append(McAnswerOption(letter=letter, text=body))
+    if len(options) < 2:
+        return raw, []
+    stem = normalize_exam_scientific_text(stem)
+    return stem, options
+
+
+def mc_answer_options_display(options: list[McAnswerOption]) -> str:
+    """``A: …  B: …`` style single line for scaffold / reports."""
+    return "  ".join(f"{o.letter}: {o.text}" for o in options)
+
+
+def ensure_multiple_choice_options_parsed(q: Question) -> None:
+    """If *q* is MC but options were not split (e.g. type set from answer key), split *q.text*."""
+    if q.question_type != "multiple_choice":
+        for sq in q.subquestions:
+            ensure_multiple_choice_options_parsed(sq)
+        return
+    if not q.answer_options:
+        stem, opts = split_mc_options_from_stem(q.text)
+        if opts:
+            q.text = stem
+            q.answer_options = opts
+    for sq in q.subquestions:
+        ensure_multiple_choice_options_parsed(sq)
+
+
 def infer_question_type(text: str) -> str:
     tl = text.lower()
     if "multiple choice" in tl or re.search(r"(?m)^\s*[A-Da-d]\s{1,4}\d", text):
+        return "multiple_choice"
+    lines = text.splitlines()
+    if _mc_options_block_start_index(lines) is not None:
         return "multiple_choice"
     if "calculate" in tl or "show your working" in tl:
         return "calculation"

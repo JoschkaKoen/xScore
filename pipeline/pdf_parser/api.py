@@ -12,7 +12,13 @@ import fitz
 from pipeline.models import Question
 from pipeline.pdf_parser.build import build_questions_from_segments
 from pipeline.pdf_parser.config import DEFAULT_PARSER_CONFIG, ParserConfig
-from pipeline.pdf_parser.content import extract_images, infer_answer_fields, safe_image_stem
+from pipeline.pdf_parser.content import (
+    ensure_multiple_choice_options_parsed,
+    extract_images,
+    infer_answer_fields,
+    safe_image_stem,
+)
+from pipeline.pdf_parser.layout import cell_margin_band, cell_scales
 from pipeline.pdf_parser.regions import (
     clip_for_segment,
     clip_for_text_segment,
@@ -50,28 +56,38 @@ def parse_answer_key_pdf(
             return {}
         segments = iter_region_segments(doc, positions, cfg)
         img_counter = [0]
-        by_q: dict[str, list[tuple[int, float, float, fitz.Rect, int, float]]] = defaultdict(list)
+        by_q: dict[str, list[tuple[int, float, float, fitz.Rect, int, float, bool, bool]]] = defaultdict(
+            list
+        )
         order: list[str] = []
-        for qid, pidx, y0, y1, cell, printed_raw, num_x1 in segments:
+        for qid, pidx, y0, y1, cell, printed_raw, num_x1, snap_top, snap_bottom in segments:
             if qid not in order:
                 order.append(qid)
-            by_q[qid].append((pidx, y0, y1, cell, printed_raw, num_x1))
+            by_q[qid].append((pidx, y0, y1, cell, printed_raw, num_x1, snap_top, snap_bottom))
 
         for qid in order:
             text_parts: list[str] = []
             answer_images = []
             stem_base = safe_image_stem(qid)
-            for pidx, y0, y1, cell, _printed_raw, num_x1 in by_q[qid]:
+            for pidx, y0, y1, cell, _printed_raw, num_x1, snap_top, snap_bottom in by_q[qid]:
                 page = doc[pidx]
-                clip = clip_for_segment(doc, pidx, y0, y1, cfg, cell)
-                text_clip = clip_for_text_segment(doc, pidx, y0, y1, cfg, cell, num_x1)
+                y0c = float(cell.y0) if snap_top else y0
+                y1c = float(cell.y1) if snap_bottom else y1
+                clip = clip_for_segment(doc, pidx, y0c, y1c, cfg, cell)
+                mt, _mb = cell_margin_band(cell, cfg)
+                _sx, sy = cell_scales(cell)
+                pad_above = min(cfg.padding_above * sy, cfg.text_clip_pad_above_pt * sy)
+                text_y0 = max(y0 - pad_above, mt)
+                text_clip = clip_for_text_segment(doc, pidx, text_y0, y1, cfg, cell, num_x1)
                 page_1 = pidx + 1
                 chunk = page.get_text("text", clip=text_clip).strip()
                 if chunk:
                     text_parts.append(chunk)
                 stem = f"ans{stem_base}_p{page_1}"
                 answer_images.extend(
-                    extract_images(page, clip, exam_folder, "answers", stem, page_1, img_counter)
+                    extract_images(
+                        page, clip, exam_folder, "answers", stem, page_1, img_counter, cfg
+                    )
                 )
 
             full_text = "\n\n".join(text_parts).strip()
@@ -102,6 +118,8 @@ def merge_answers_into_scaffold(questions: list[Question], answer_map: dict[str,
             walk(q.subquestions)
 
     walk(questions)
+    for q in questions:
+        ensure_multiple_choice_options_parsed(q)
 
 
 def prepare_scaffold_image_dirs(exam_folder: Path) -> tuple[Path, Path]:

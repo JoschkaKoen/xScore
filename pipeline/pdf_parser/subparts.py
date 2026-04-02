@@ -10,6 +10,7 @@ import fitz
 from pipeline.models import BBox, ExamImage, Question, WritingArea
 from pipeline.pdf_parser.config import ParserConfig
 from pipeline.pdf_parser.content import infer_marks, infer_question_type, rollup_question_marks
+from pipeline.pdf_parser.layout import cell_margin_band, cell_scales, expand_bbox_to_subpage_width
 from pipeline.pdf_parser.regions import clip_for_text_segment
 
 _ROMAN_SUB_OK = frozenset(
@@ -216,7 +217,7 @@ def _assign_image_to_deepest_node(root: Question, im: ExamImage) -> None:
 def maybe_split_written_subquestions(
     q: Question,
     doc: fitz.Document,
-    segs: list[tuple[int, float, float, fitz.Rect, int, float]],
+    segs: list[tuple[int, float, float, fitz.Rect, int, float, bool, bool]],
     cfg: ParserConfig,
 ) -> Question:
     if q.question_type == "multiple_choice":
@@ -224,8 +225,12 @@ def maybe_split_written_subquestions(
 
     margin_digits = root_margin_digits(q.number)
     lines: list[ClipLine] = []
-    for pidx, y0, y1, cell, _pr, num_x1 in segs:
-        tc = clip_for_text_segment(doc, pidx, y0, y1, cfg, cell, num_x1)
+    for pidx, y0, y1, cell, _pr, num_x1, _st, _sb in segs:
+        mt, _mb = cell_margin_band(cell, cfg)
+        _sx, sy = cell_scales(cell)
+        pad_above = min(cfg.padding_above * sy, cfg.text_clip_pad_above_pt * sy)
+        text_y0 = max(y0 - pad_above, mt)
+        tc = clip_for_text_segment(doc, pidx, text_y0, y1, cfg, cell, num_x1)
         lines.extend(_collect_clip_lines(doc[pidx], tc, pidx + 1))
 
     if len(lines) < 3:
@@ -282,6 +287,7 @@ def maybe_split_written_subquestions(
             continue
         page = seg_lines[0].page
         bb = _bbox_union_lines(seg_lines, page) or q.bbox
+        bb = expand_bbox_to_subpage_width(doc, bb)
         sq = Question(
             number="",
             question_type=infer_question_type(seg_text),

@@ -17,6 +17,7 @@ from pipeline.models import (
     BBox,
     ExamImage,
     ExamScaffold,
+    McAnswerOption,
     Question,
     WritingArea,
     flatten_questions,
@@ -28,9 +29,11 @@ from pipeline.pdf_parser import (
     parse_exam_pdf,
     prepare_scaffold_image_dirs,
 )
+from pipeline.pdf_parser.content import mc_answer_options_display, normalize_multiple_choice_tree
+from pipeline.scaffold_overlay import write_scaffold_boxes_pdf
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 
 def _find_exam_pdf(folder: Path) -> Path:
@@ -100,12 +103,18 @@ def _wa_from_dict(d: dict) -> WritingArea:
 
 
 def question_to_dict(q: Question) -> dict:
+    opts = q.answer_options
+    opts_dicts = [{"letter": o.letter, "text": o.text} for o in opts]
+    opts_line = mc_answer_options_display(opts) if opts else None
     return {
         "number": q.number,
         "question_type": q.question_type,
         "text": q.text,
+        "answer_options": opts_dicts,
+        "answer_options_text": opts_line,
         "marks": q.marks,
         "bbox": _bbox_to_dict(q.bbox),
+        "answer_field_bbox": _bbox_to_dict(q.answer_field_bbox) if q.answer_field_bbox else None,
         "images": [_img_to_dict(i) for i in q.images],
         "writing_areas": [_wa_to_dict(w) for w in q.writing_areas],
         "subquestions": [question_to_dict(s) for s in q.subquestions],
@@ -124,12 +133,20 @@ def question_from_dict(d: dict) -> Question:
     bbox_d = d.get("bbox")
     if not bbox_d:
         bbox_d = {"x0": 0.0, "y0": 0.0, "x1": 0.0, "y1": 0.0, "page": 1}
+    ao = [
+        McAnswerOption(letter=str(x["letter"]), text=str(x.get("text") or ""))
+        for x in (d.get("answer_options") or [])
+        if isinstance(x, dict) and x.get("letter")
+    ]
     return Question(
         number=str(d["number"]),
         question_type=d.get("question_type", "short_answer"),
         text=text,
         marks=int(d.get("marks", 1)),
         bbox=_bbox_from_dict(bbox_d),
+        answer_field_bbox=(
+            _bbox_from_dict(d["answer_field_bbox"]) if d.get("answer_field_bbox") else None
+        ),
         images=[_img_from_dict(x) for x in d.get("images") or []],
         writing_areas=[_wa_from_dict(x) for x in d.get("writing_areas") or []],
         subquestions=[question_from_dict(s) for s in d.get("subquestions") or []],
@@ -137,6 +154,7 @@ def question_from_dict(d: dict) -> Question:
         marking_criteria=d.get("marking_criteria"),
         answer_images=[_img_from_dict(x) for x in d.get("answer_images") or []],
         answer_key_text=d.get("answer_key_text"),
+        answer_options=ao,
     )
 
 
@@ -254,6 +272,9 @@ def build_scaffold(folder: Path, client: Any | None = None, dpi: int = 200) -> E
     else:
         print("[scaffold] No answer key PDF found — correct_answer left empty.")
 
+    for q in questions:
+        normalize_multiple_choice_tree(q)
+
     import fitz
 
     doc = fitz.open(exam_pdf)
@@ -278,8 +299,13 @@ def build_scaffold(folder: Path, client: Any | None = None, dpi: int = 200) -> E
         raw_description=raw_description,
     )
     _save_cache(folder, scaffold)
+    out_pdf, n_rects, n_pages = write_scaffold_boxes_pdf(exam_pdf, questions)
     print(
         f"[scaffold] Scaffold built: {len(questions)} top-level questions, "
         f"{len(leaves)} gradable parts, {total_marks} total marks."
+    )
+    print(
+        f"[scaffold] Bounding-box overlay: {out_pdf.name} "
+        f"({n_rects} rectangles on {n_pages} page(s))."
     )
     return scaffold

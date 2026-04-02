@@ -39,6 +39,21 @@ class ParserConfig:
     box_min_height: float = 15.0
     line_max_height: float = 4.0
     line_min_width: float = 100.0
+    # Pixmap clip = core rect expanded by this margin on all sides (exam + answer key).
+    image_crop_pad_pt: float = 5.0
+    # When the PDF has no embedded raster images, rasterize vector drawings (e.g. Fig. n.n).
+    vector_figure_fallback: bool = True
+    vector_figure_min_area: float = 400.0
+    vector_figure_min_short_side: float = 20.0
+    vector_figure_max_aspect: float = 6.0
+    # Union vector bbox with nearby printed labels (A/B, Sun, “Fig. n.n”) before rasterizing.
+    vector_figure_label_h_pad_pt: float = 32.0
+    vector_figure_label_v_pad_top_pt: float = 10.0
+    vector_figure_label_v_pad_bottom_pt: float = 10.0
+    vector_figure_label_max_line_chars: int = 56
+    # Snap bboxes to layout cell (sub-page) top/bottom when near the edge.
+    subpage_edge_snap_tol_top_pt: float = 20.0
+    subpage_edge_snap_tol_bottom_pt: float = 24.0
 
 
 DEFAULT_PARSER_CONFIG = ParserConfig()

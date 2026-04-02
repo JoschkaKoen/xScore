@@ -188,7 +188,7 @@ def iter_region_segments(
     doc: fitz.Document,
     positions: list[tuple[str, int, float, fitz.Rect, int, float]],
     cfg: ParserConfig = DEFAULT_PARSER_CONFIG,
-) -> list[tuple[str, int, float, float, fitz.Rect, int, float]]:
+) -> list[tuple[str, int, float, float, fitz.Rect, int, float, bool, bool]]:
     if not positions:
         return []
 
@@ -201,31 +201,30 @@ def iter_region_segments(
         groups[cell_key(t)].append(t)
 
     ordered_keys = sorted(groups.keys())
-    results: list[tuple[str, int, float, float, fitz.Rect, int, float]] = []
+    results: list[tuple[str, int, float, float, fitz.Rect, int, float, bool, bool]] = []
 
     for ck in ordered_keys:
         g = sorted(groups[ck], key=lambda t: t[2])
         cell = g[0][3]
         margin_top, margin_bottom = cell_margin_band(cell, cfg)
-        _sx, sy = cell_scales(cell)
-        _ = _sx
-        pad = cfg.padding_above * sy
+        n_g = len(g)
 
         for pos_idx, (qid, q_page, q_y, q_cell, printed_raw, num_x1) in enumerate(g):
             assert q_cell == cell
-            if pos_idx + 1 < len(g):
-                next_q = g[pos_idx + 1]
-                next_page, next_y = next_q[1], next_q[2]
+            # Top of this exercise = top of its first printed line (margin number anchor).
+            start_y = max(q_y, margin_top)
+            if pos_idx + 1 < n_g:
+                next_y = g[pos_idx + 1][2]
+                # Bottom = top of next exercise's first line (shared boundary, no gap).
+                end_y = min(next_y, margin_bottom)
             else:
-                next_page = q_page
-                next_y = margin_bottom
-
-            pad_above = min(pad, cfg.text_clip_pad_above_pt * sy)
-            start_y = max(q_y - pad_above, margin_top)
-
-            end_y = min(next_y - 2.0, margin_bottom)
-            end_y = get_tight_y_end(doc[q_page], start_y, end_y, horiz_band=cell)
-            results.append((qid, q_page, start_y, end_y, cell, printed_raw, num_x1))
+                end_y = min(margin_bottom, float(cell.y1) - 1.0)
+                end_y = get_tight_y_end(doc[q_page], start_y, end_y, horiz_band=cell)
+            snap_top = pos_idx == 0
+            snap_bottom = pos_idx == n_g - 1
+            results.append(
+                (qid, q_page, start_y, end_y, cell, printed_raw, num_x1, snap_top, snap_bottom)
+            )
 
     return results
 
@@ -236,16 +235,13 @@ def clip_horizontal_bounds(
     cfg: ParserConfig,
     cell: fitz.Rect,
 ) -> tuple[float, float]:
-    page_w = doc[page_idx].rect.width
-    sx, _sy = cell_scales(cell)
-    _ = _sy
-    if cell.x0 <= page_w * 0.33:
-        left = cell.x0 + cfg.strip_crop_left * sx
-    else:
-        inner = max(2.0, min(8.0 * sx, cfg.strip_crop_left * sx))
-        left = cell.x0 + inner
-    right = cell.x1 - cfg.strip_crop_right * sx
-    return left, right
+    """Full width of the layout *cell* (sub-page): quadrants 1–4, or half-page columns, etc.
+
+    Text extraction still narrows the left edge in :func:`clip_for_text_segment` via
+    ``number_span_x1`` so margin numbers do not pollute stem text.
+    """
+    _ = doc, page_idx, cfg
+    return float(cell.x0), float(cell.x1)
 
 
 def clip_for_segment(
