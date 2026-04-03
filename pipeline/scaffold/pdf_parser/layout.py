@@ -6,9 +6,9 @@ import re
 
 import fitz
 
-from pipeline.models import BBox, ExamImage, Question, flatten_questions
+from pipeline.shared.models import BBox, ExamImage, Question, flatten_questions
 
-from pipeline.pdf_parser.config import (
+from pipeline.scaffold.pdf_parser.config import (
     A3_LANDSCAPE_MIN_H,
     A3_LANDSCAPE_MIN_W,
     FOURUP_PORTRAIT_MIN_H,

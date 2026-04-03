@@ -3,7 +3,7 @@
 No AI for structure: question regions follow left-margin numbering (Cambridge-style).
 The list of questions is in **reading order** on the page(s); printed numbers may be out of order.
 Results are cached under ``{artifact_dir}/scaffold_cache.json`` (default
-``output/<exam_stem>/`` via :func:`pipeline.exam_paths.exam_artifact_dir`) and reused
+``output/<exam_stem>/`` via :func:`pipeline.shared.exam_paths.exam_artifact_dir`) and reused
 if no source PDF is newer than the cache. Exam PDF figures go under
 ``{artifact_dir}/scaffold_images``.
 """
@@ -15,7 +15,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from pipeline.models import (
+from pipeline.shared.models import (
     BBox,
     ExamImage,
     ExamScaffold,
@@ -25,20 +25,20 @@ from pipeline.models import (
     flatten_questions,
     gradable_questions,
 )
-from pipeline.exam_paths import (
+from pipeline.shared.exam_paths import (
     artifact_scaffold_boxes_path,
     artifact_scaffold_cache_path,
     exam_artifact_dir,
     legacy_artifact_scaffold_cache_path,
 )
-from pipeline.pdf_parser import (
+from pipeline.scaffold.pdf_parser import (
     merge_answers_into_scaffold,
     parse_answer_key_pdf,
     parse_exam_pdf,
     prepare_scaffold_image_dirs,
 )
-from pipeline.pdf_parser.content import normalize_multiple_choice_tree
-from pipeline.scaffold_overlay import write_scaffold_boxes_pdf
+from pipeline.scaffold.pdf_parser.content import normalize_multiple_choice_tree
+from pipeline.scaffold.draw_boxes_on_empty_exam import write_scaffold_boxes_pdf
 
 
 SCHEMA_VERSION = 15
@@ -47,11 +47,11 @@ SCHEMA_VERSION = 15
 def _find_exam_pdf(folder: Path) -> Path:
     """Pick the vector exam PDF for parsing.
 
-    When a four-up raw exam exists (see :func:`pipeline.bbox_projection.find_raw_four_up_pdf`),
+    When a four-up raw exam exists (see :func:`pipeline.scaffold.project_boxes_on_scanned_exam.find_raw_four_up_pdf`),
     it is **always** used so question bboxes live in the same PDF space as IGCSE anchors used
     to project onto scans. Otherwise fall back to any raw/exam PDF (e.g. 2-up, 1-up).
     """
-    from pipeline.bbox_projection import find_raw_four_up_pdf
+    from pipeline.scaffold.project_boxes_on_scanned_exam import find_raw_four_up_pdf
 
     four_up = find_raw_four_up_pdf(folder)
     if four_up is not None:
@@ -351,7 +351,7 @@ def build_scaffold(
     *quiet*: when True, omit cache-hit log lines (e.g. projected overlay helper).
     """
     _ = client, dpi
-    from pipeline.terminal_ui import tool_line
+    from pipeline.shared.terminal_ui import tool_line
 
     ad = artifact_dir or exam_artifact_dir(folder, output_base)
 

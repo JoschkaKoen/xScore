@@ -18,7 +18,7 @@ Each sub-page header carries an "IGCSE Physics: sXX YY" label, whose center
 coordinates are:
 - Known exactly in 4-up PDF space (extracted from the raw vector PDF).
 - Detected on the deskewed scan via template matching (stored in the
-  ``_reflines.json`` sidecar produced by :func:`pipeline.scan_deskew.deskew_pdf_raster`).
+  ``_reflines.json`` sidecar produced by :func:`pipeline.preprocessing.deskew.deskew_pdf_raster`).
 
 These two pairs of corresponding points define a **similarity transform**
 (uniform scale + translation) per half-page.  Rotation is already handled by
@@ -44,7 +44,7 @@ Usage example
 ::
 
     from pathlib import Path
-    from pipeline.bbox_projection import (
+    from pipeline.scaffold.project_boxes_on_scanned_exam import (
         extract_raw_igcse_anchors,
         compute_page_transforms,
         project_scaffold_bbox,
@@ -54,7 +54,7 @@ Usage example
     scan_page    = reflines_data[0]   # one entry from _reflines.json
     top_tf, bot_tf = compute_page_transforms(raw_anchors, scan_page["anchors"])
 
-    # Project a Question.bbox (BBox dataclass from pipeline.models)
+    # Project a Question.bbox (BBox dataclass from pipeline.shared.models)
     x0, y0, x1, y1 = project_scaffold_bbox(question.bbox, top_tf, bot_tf)
 """
 
@@ -67,8 +67,8 @@ from typing import NamedTuple
 
 import fitz  # PyMuPDF
 
-from pipeline.models import BBox, Question, flatten_questions
-from pipeline.scaffold_overlay import _TEAL, _hsv_color
+from pipeline.shared.models import BBox, Question, flatten_questions
+from pipeline.scaffold.draw_boxes_on_empty_exam import _TEAL, _hsv_color
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -214,7 +214,7 @@ def extract_raw_igcse_anchors(raw_4up_pdf: Path) -> dict[str, tuple[float, float
     missing = [k for k, v in best.items() if v is None]
     if missing:
         raise ValueError(
-            f"[bbox_projection] Could not find IGCSE anchors in {raw_4up_pdf.name} "
+            f"[project_boxes_on_scanned_exam] Could not find IGCSE anchors in {raw_4up_pdf.name} "
             f"for quadrant(s): {missing}"
         )
 
@@ -275,7 +275,7 @@ def compute_page_transforms(
     for key in ("top_left", "top_right", "bot_left", "bot_right"):
         if scan_anchors.get(key) is None:
             raise ValueError(
-                f"[bbox_projection] Scan anchor '{key}' is missing "
+                f"[project_boxes_on_scanned_exam] Scan anchor '{key}' is missing "
                 f"(template match failed for this page)."
             )
 
@@ -318,7 +318,7 @@ def project_scaffold_bbox(
     half** (y=0 = first row of the top or bottom half-page image).
 
     Args:
-        bbox:          A :class:`pipeline.models.BBox` (or any object with
+        bbox:          A :class:`pipeline.shared.models.BBox` (or any object with
                        ``.x0``, ``.y0``, ``.x1``, ``.y1`` attributes), in
                        PDF points on the 4-up page.
         top_transform: Transform for bboxes whose ``y0`` is in the top half.
@@ -410,7 +410,7 @@ def _projected_items_for_question_node(
     scaffold_page: int = 1,
     mid_y_pt: float = _RAW_MID_Y_PT,
 ) -> list[tuple[str, tuple[float, float, float, float], tuple[float, float, float], bool]]:
-    """Like ``scaffold_overlay._rects_for_question_node`` but in projected scan space.
+    """Like ``draw_boxes_on_empty_exam._rects_for_question_node`` but in projected scan space.
 
     Returns tuples ``(half, (x0,y0,x1,y1)_px, rgb, is_equation_blank)`` in **half-page
     pixel** coordinates (``half`` is ``\"top\"`` or ``\"bot\"`` for y-offset on the page).
@@ -457,14 +457,14 @@ def overlay_projected_scaffold_on_scan_pdf(
     computes top/bottom similarity transforms, projects every question bbox
     (plus images and equation-blank boxes) from 4-up PDF space onto scan
     pixels, then strokes rectangles in PDF point space.  Colours follow the same
-    golden-ratio scheme as :func:`pipeline.scaffold_overlay.write_scaffold_boxes_pdf`;
+    golden-ratio scheme as :func:`pipeline.scaffold.draw_boxes_on_empty_exam.write_scaffold_boxes_pdf`;
     equation blanks use teal.
 
     Args:
-        deskewed_pdf: Output of :func:`pipeline.scan_deskew.deskew_pdf_raster`.
+        deskewed_pdf: Output of :func:`pipeline.preprocessing.deskew.deskew_pdf_raster`.
         reflines_json: Matching ``*_reflines.json`` with ``anchors`` per page.
         raw_4up_pdf: Raw exam PDF used to build the scaffold (4-up layout).
-        questions: Root-level questions from :class:`pipeline.models.ExamScaffold`.
+        questions: Root-level questions from :class:`pipeline.shared.models.ExamScaffold`.
         output_pdf: Destination path (must differ from *deskewed_pdf* unless you
             intend to overwrite after loading into memory first — caller's choice).
         dpi: Rasterisation DPI of *deskewed_pdf* (default 300).
@@ -490,7 +490,7 @@ def overlay_projected_scaffold_on_scan_pdf(
 
     all_nodes = flatten_questions(questions)
 
-    from pipeline.terminal_ui import tool_line, warn_line
+    from pipeline.shared.terminal_ui import tool_line, warn_line
 
     doc = fitz.open(str(deskewed_pdf))
     try:

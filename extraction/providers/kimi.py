@@ -98,14 +98,14 @@ class KimiProvider:
     def create_client() -> Any | None:
         def _warn(msg: str) -> None:
             try:
-                from pipeline.terminal_ui import warn_line
+                from pipeline.shared.terminal_ui import warn_line
                 warn_line(msg)
             except Exception:
                 print(msg)
 
         def _note(msg: str) -> None:
             try:
-                from pipeline.terminal_ui import note_line
+                from pipeline.shared.terminal_ui import note_line
                 note_line(msg)
             except Exception:
                 print(msg)

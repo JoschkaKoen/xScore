@@ -7,11 +7,11 @@ from dataclasses import dataclass
 
 import fitz
 
-from pipeline.models import BBox, ExamImage, Question, WritingArea
-from pipeline.pdf_parser.config import ParserConfig
-from pipeline.pdf_parser.content import infer_marks, infer_question_type, rollup_question_marks
-from pipeline.pdf_parser.layout import cell_margin_band, cell_scales, expand_bbox_to_subpage_width
-from pipeline.pdf_parser.regions import clip_for_text_segment
+from pipeline.shared.models import BBox, ExamImage, Question, WritingArea
+from pipeline.scaffold.pdf_parser.config import ParserConfig
+from pipeline.scaffold.pdf_parser.content import infer_marks, infer_question_type, rollup_question_marks
+from pipeline.scaffold.pdf_parser.layout import cell_margin_band, cell_scales, expand_bbox_to_subpage_width
+from pipeline.scaffold.pdf_parser.regions import clip_for_text_segment
 
 _ROMAN_SUB_OK = frozenset(
     "i ii iii iv v vi vii viii ix x xi xii xiii xiv xv xvi xvii xviii xix xx".split()

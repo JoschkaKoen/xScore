@@ -1,6 +1,6 @@
 """Rotate scanned exam PDFs upright (Tesseract OSD) and drop blank pages (pikepdf).
 
-Used by :mod:`pipeline.pdf_cleanup` before fine deskew. Formerly ``autograder.py``.
+Used by :mod:`pipeline.preprocessing.start_scan` before fine deskew. Formerly ``autograder.py``.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def process_pdf(
     input_path = Path(input_path)
     output_path = Path(output_path)
 
-    from pipeline.terminal_ui import BOLD, CYAN, err_line, icon, note_line, ok_line, paint, warn_line
+    from pipeline.shared.terminal_ui import BOLD, CYAN, err_line, icon, note_line, ok_line, paint, warn_line
 
     if input_path.resolve() == output_path.resolve():
         err_line(

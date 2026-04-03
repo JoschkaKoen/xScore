@@ -19,7 +19,7 @@ def cleanup_pdf(
 
     Looks for a file whose name contains "scan" (case-insensitive) in *folder*,
     excluding any ``cleaned_scan.pdf`` sitting next to the sources.
-    Default *artifact_dir* is ``output/<exam_stem>/`` (see :func:`pipeline.exam_paths.exam_artifact_dir`).
+    Default *artifact_dir* is ``output/<exam_stem>/`` (see :func:`pipeline.shared.exam_paths.exam_artifact_dir`).
 
     If a valid cached ``cleaned_scan.pdf`` exists only under the exam folder (legacy),
     it is copied into *artifact_dir* once.
@@ -34,12 +34,12 @@ def cleanup_pdf(
 
     Raises ``FileNotFoundError`` if no scan PDF is found.
     """
-    from pipeline.exam_paths import exam_artifact_dir
+    from pipeline.shared.exam_paths import exam_artifact_dir
 
     ad = artifact_dir or exam_artifact_dir(folder, output_base)
     ad.mkdir(parents=True, exist_ok=True)
 
-    from pipeline.scan_preprocess import process_pdf
+    from pipeline.preprocessing.remove_blanks_autorotate import process_pdf
 
     output = ad / "cleaned_scan.pdf"
     legacy_out = folder / "cleaned_scan.pdf"
@@ -58,7 +58,7 @@ def cleanup_pdf(
         sorted(scans, key=lambda p: p.name.lower())[0],
     )
 
-    from pipeline.terminal_ui import tool_line
+    from pipeline.shared.terminal_ui import tool_line
 
     sidecar = output.with_name(f"{output.stem}_reflines.json")
     legacy_side = legacy_out.with_name(f"{legacy_out.stem}_reflines.json")
@@ -67,14 +67,14 @@ def cleanup_pdf(
         for p in (output, sidecar, legacy_out, legacy_side):
             if p.exists():
                 p.unlink()
-                tool_line("pdf_cleanup", f"--force-clean-scan: removed {p.name}")
+                tool_line("start_scan", f"--force-clean-scan: removed {p.name}")
 
     if not force_clean_scan and output.exists() and output.stat().st_mtime >= match.stat().st_mtime:
-        tool_line("pdf_cleanup", f"Using cached cleaned scan: {output}")
+        tool_line("start_scan", f"Using cached cleaned scan: {output}")
         return output
 
     if not force_clean_scan and legacy_out.exists() and legacy_out.stat().st_mtime >= match.stat().st_mtime:
-        tool_line("pdf_cleanup", f"Migrating legacy {legacy_out.name} → {output} …")
+        tool_line("start_scan", f"Migrating legacy {legacy_out.name} → {output} …")
         shutil.copy2(legacy_out, output)
         if legacy_side.is_file():
             shutil.copy2(legacy_side, sidecar)
@@ -89,7 +89,7 @@ def cleanup_pdf(
                 pass
         return output
 
-    tool_line("pdf_cleanup", f"Cleaning {match.name} → {output.name} (DPI {dpi}) …")
+    tool_line("start_scan", f"Cleaning {match.name} → {output.name} (DPI {dpi}) …")
     process_pdf(
         input_path=str(match),
         output_path=str(output),
@@ -98,7 +98,7 @@ def cleanup_pdf(
     )
 
     if deskew:
-        from pipeline.scan_deskew import deskew_pdf_raster  # type: ignore[import]
+        from pipeline.preprocessing.deskew import deskew_pdf_raster  # type: ignore[import]
 
         tmp_deskew = output.parent / f"{output.stem}_deskew_tmp{output.suffix}"
         deskew_pdf_raster(
@@ -109,7 +109,7 @@ def cleanup_pdf(
             verbose=False,
         )
         shutil.move(str(tmp_deskew), str(output))
-        from pipeline.scan_overlays import write_scan_debug_pdfs_after_deskew
+        from pipeline.preprocessing.draw_scaffold_bounding_boxes import write_scan_debug_pdfs_after_deskew
 
         write_scan_debug_pdfs_after_deskew(
             folder, output, dpi, verbose=False, artifact_dir=ad,

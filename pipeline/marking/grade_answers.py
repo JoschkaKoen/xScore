@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pipeline.models import ExamScaffold, PageAssignment, Question, StudentResult, TaskInstruction
+from pipeline.shared.models import ExamScaffold, PageAssignment, Question, StudentResult, TaskInstruction
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ def _kimi_call(client: Any, image_b64: str, prompt: str, max_tokens: int = 128) 
             )
             return resp.choices[0].message.content or ""
         except Exception as exc:
-            from pipeline.terminal_ui import warn_line
+            from pipeline.shared.terminal_ui import warn_line
             warn_line(f"[grading] API error (attempt {attempt}/3): {exc}")
             if attempt < 3:
                 time.sleep(2 ** attempt)
@@ -219,7 +219,7 @@ def grade_students(
     task = instruction.task_type
     assignments = _filter_students(page_map, instruction)
 
-    from pipeline.terminal_ui import info_line, tool_line
+    from pipeline.shared.terminal_ui import info_line, tool_line
     tool_line("grading", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
     all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
 

@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pipeline.models import PageAssignment
+from pipeline.shared.models import PageAssignment
 
 
 _NAME_PROMPT = """\
@@ -47,7 +47,7 @@ def _to_jpeg_b64(img) -> str:
 
 
 def _call_kimi(client: Any, image_b64: str) -> str:
-    from pipeline.terminal_ui import warn_line
+    from pipeline.shared.terminal_ui import warn_line
 
     model = os.getenv("PIPELINE_AI_MODEL") or "kimi-k2.5"
     is_k2_5 = model.startswith("kimi-k2")
@@ -72,7 +72,7 @@ def _call_kimi(client: Any, image_b64: str) -> str:
             )
             return resp.choices[0].message.content or ""
         except Exception as exc:
-            warn_line(f"[page_assignment] API error (attempt {attempt}/3): {exc}")
+            warn_line(f"[assign_pages_to_students] API error (attempt {attempt}/3): {exc}")
             if attempt < 3:
                 time.sleep(2 ** attempt)
     return ""
@@ -101,9 +101,9 @@ def assign_pages(
     if client is None:
         raise RuntimeError("No Kimi client available for page assignment.")
 
-    from pipeline.terminal_ui import info_line, note_line, tool_line
+    from pipeline.shared.terminal_ui import info_line, note_line, tool_line
 
-    tool_line("page_assignment", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
+    tool_line("assign_pages_to_students", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
     pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
     n_pages = len(pages)
     step = max(1, n_pages // 8) if not verbose and n_pages > 1 else 1

@@ -10,16 +10,16 @@ from typing import Any
 
 import fitz
 
-from pipeline.models import Question, flatten_questions
-from pipeline.pdf_parser.build import build_questions_from_segments
-from pipeline.pdf_parser.config import DEFAULT_PARSER_CONFIG, ParserConfig
-from pipeline.pdf_parser.content import (
+from pipeline.shared.models import Question, flatten_questions
+from pipeline.scaffold.pdf_parser.build import build_questions_from_segments
+from pipeline.scaffold.pdf_parser.config import DEFAULT_PARSER_CONFIG, ParserConfig
+from pipeline.scaffold.pdf_parser.content import (
     ensure_multiple_choice_options_parsed,
     infer_answer_fields,
     normalize_exam_scientific_text,
 )
-from pipeline.pdf_parser.layout import cell_margin_band, cell_scales
-from pipeline.pdf_parser.regions import (
+from pipeline.scaffold.pdf_parser.layout import cell_margin_band, cell_scales
+from pipeline.scaffold.pdf_parser.regions import (
     clip_for_segment,
     clip_for_text_segment,
     find_question_positions,
@@ -114,7 +114,7 @@ def parse_exam_pdf(
     artifact_dir: Path | None = None,
 ) -> list[Question]:
     """Parse blank exam vector PDF; write images under artifact_dir/scaffold_images/."""
-    from pipeline.exam_paths import exam_artifact_dir
+    from pipeline.shared.exam_paths import exam_artifact_dir
 
     root = artifact_dir or exam_artifact_dir(exam_folder)
     doc = fitz.open(pdf_path)

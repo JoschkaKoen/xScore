@@ -7,7 +7,7 @@ from collections import defaultdict
 
 import fitz
 
-from pipeline.pdf_parser.config import (
+from pipeline.scaffold.pdf_parser.config import (
     DEFAULT_PARSER_CONFIG,
     DISCLAIMER_TRIGGERS,
     FOOTER_MARGIN_PT,
@@ -15,7 +15,7 @@ from pipeline.pdf_parser.config import (
     ParserConfig,
     SEPARATOR_MIN_WIDTH_PT,
 )
-from pipeline.pdf_parser.layout import (
+from pipeline.scaffold.pdf_parser.layout import (
     bbox_intersects_cell,
     cell_margin_band,
     cell_scales,

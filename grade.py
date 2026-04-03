@@ -135,7 +135,7 @@ def main() -> None:
     log_path = Path("logs") / f"{timestamp}.log"
     tee = _Tee(log_path)
     sys.stdout = tee
-    from pipeline.terminal_ui import BOLD, BLUE, icon, note_line, paint
+    from pipeline.shared.terminal_ui import BOLD, BLUE, icon, note_line, paint
 
     print()
     print(paint(f"  {icon('spark')}  grade.py  —  Auto-Grader {__version__}", BLUE, BOLD))
@@ -152,7 +152,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # Late imports after dotenv so env vars are available
     from extraction.providers.kimi import KimiProvider
 
-    from pipeline.terminal_ui import (
+    from pipeline.shared.terminal_ui import (
         err_line,
         info_line,
         note_line,
@@ -161,12 +161,12 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         warn_line,
     )
 
-    from pipeline.answer_detection import detect_answered_exercises
-    from pipeline.exam_paths import artifact_scaffold_cache_path, legacy_artifact_scaffold_cache_path
-    from pipeline.folder_discovery import find_folder
-    from pipeline.grading import grade_students
-    from pipeline.ground_truth import evaluate_results, find_ground_truth_file, load_ground_truth
-    from pipeline.output import (
+    from pipeline.marking.detect_answered_questions import detect_answered_exercises
+    from pipeline.shared.exam_paths import artifact_scaffold_cache_path, legacy_artifact_scaffold_cache_path
+    from pipeline.marking.find_exam_folder import find_folder
+    from pipeline.marking.grade_answers import grade_students
+    from pipeline.shared.load_ground_truth import evaluate_results, find_ground_truth_file, load_ground_truth
+    from pipeline.reports.print_results import (
         print_evaluation_summary,
         print_exercise_summary,
         print_grand_summary,
@@ -174,12 +174,12 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         print_results_table,
         print_scaffold_summary,
     )
-    from pipeline.page_assignment import assign_pages
-    from pipeline.pdf_cleanup import cleanup_pdf
-    from pipeline.prompt_parser import parse_prompt
-    from pipeline.report import generate_report
-    from pipeline.scaffold import build_scaffold
-    from pipeline.student_list import read_student_list
+    from pipeline.marking.assign_pages_to_students import assign_pages
+    from pipeline.preprocessing.start_scan import cleanup_pdf
+    from pipeline.marking.parse_instruction import parse_prompt
+    from pipeline.reports.generate_report import generate_report
+    from pipeline.scaffold.generate_scaffold import build_scaffold
+    from pipeline.shared.load_student_list import read_student_list
 
     # ------------------------------------------------------------------ #
     # Prerequisite: create shared API client (reused across all steps)   #

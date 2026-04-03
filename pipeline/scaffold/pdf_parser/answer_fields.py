@@ -15,10 +15,10 @@ import re
 
 import fitz
 
-from pipeline.models import BBox, Question
-from pipeline.pdf_parser.config import ParserConfig
-from pipeline.pdf_parser.layout import cell_for_point
-from pipeline.pdf_parser.regions import clip_horizontal_bounds
+from pipeline.shared.models import BBox, Question
+from pipeline.scaffold.pdf_parser.config import ParserConfig
+from pipeline.scaffold.pdf_parser.layout import cell_for_point
+from pipeline.scaffold.pdf_parser.regions import clip_horizontal_bounds
 
 # Matches sub-exercise / sub-sub-exercise structural labels at line start.
 _RE_STRUCTURAL_NEXT = re.compile(

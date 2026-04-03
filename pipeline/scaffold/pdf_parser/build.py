@@ -7,9 +7,9 @@ from pathlib import Path
 
 import fitz
 
-from pipeline.models import BBox, ExamImage, McAnswerOption, Question
-from pipeline.pdf_parser.config import ParserConfig
-from pipeline.pdf_parser.content import (
+from pipeline.shared.models import BBox, ExamImage, McAnswerOption, Question
+from pipeline.scaffold.pdf_parser.config import ParserConfig
+from pipeline.scaffold.pdf_parser.content import (
     adjust_leaf_bboxes_after_previous_exercise,
     extract_images,
     infer_marks,
@@ -19,15 +19,15 @@ from pipeline.pdf_parser.content import (
     split_mc_options_from_stem,
     strip_question_tree_stems,
 )
-from pipeline.pdf_parser.answer_fields import assign_answer_field_bboxes
-from pipeline.pdf_parser.layout import (
+from pipeline.scaffold.pdf_parser.answer_fields import assign_answer_field_bboxes
+from pipeline.scaffold.pdf_parser.layout import (
     apply_subpage_vertical_snaps,
     cell_margin_band,
     cell_scales,
     expand_bbox_to_subpage_width,
 )
-from pipeline.pdf_parser.regions import clip_for_segment, clip_for_text_segment
-from pipeline.pdf_parser.subparts import maybe_split_written_subquestions
+from pipeline.scaffold.pdf_parser.regions import clip_for_segment, clip_for_text_segment
+from pipeline.scaffold.pdf_parser.subparts import maybe_split_written_subquestions
 
 
 def build_questions_from_segments(

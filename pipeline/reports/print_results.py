@@ -9,8 +9,8 @@ import textwrap
 
 from extraction.reporting import Colors
 
-from pipeline.models import ExamScaffold, PageAssignment, StudentResult
-from pipeline.terminal_ui import icon, paint, rule, BOLD, CYAN
+from pipeline.shared.models import ExamScaffold, PageAssignment, StudentResult
+from pipeline.shared.terminal_ui import icon, paint, rule, BOLD, CYAN
 
 
 # ---------------------------------------------------------------------------

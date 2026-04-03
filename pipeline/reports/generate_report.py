@@ -17,7 +17,7 @@ import statistics
 import subprocess
 from pathlib import Path
 
-from pipeline.models import ExamScaffold, StudentResult
+from pipeline.shared.models import ExamScaffold, StudentResult
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +282,7 @@ def generate_report(
     Returns ``True`` on success, ``False`` if xelatex fails (the .tex is
     still written for manual inspection).
     """
-    from pipeline.terminal_ui import err_line, ok_line, tool_line
+    from pipeline.shared.terminal_ui import err_line, ok_line, tool_line
 
     output_tex.parent.mkdir(parents=True, exist_ok=True)
 

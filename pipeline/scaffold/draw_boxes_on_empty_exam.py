@@ -18,7 +18,7 @@ from pathlib import Path
 
 import fitz
 
-from pipeline.models import BBox, Question, flatten_questions
+from pipeline.shared.models import BBox, Question, flatten_questions
 
 # Golden-ratio increment for hue stepping (φ⁻¹ ≈ 0.6180339887).
 _PHI_INV = 0.6180339887

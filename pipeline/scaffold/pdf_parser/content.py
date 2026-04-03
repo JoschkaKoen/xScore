@@ -7,8 +7,8 @@ from pathlib import Path
 
 import fitz
 
-from pipeline.models import BBox, ExamImage, McAnswerOption, Question, WritingArea, flatten_questions
-from pipeline.pdf_parser.config import DEFAULT_PARSER_CONFIG, ParserConfig
+from pipeline.shared.models import BBox, ExamImage, McAnswerOption, Question, WritingArea, flatten_questions
+from pipeline.scaffold.pdf_parser.config import DEFAULT_PARSER_CONFIG, ParserConfig
 
 # Printed figure captions (exclude from vector-figure raster union).
 _RE_FIG_CAPTION_LINE = re.compile(r"^Fig(?:\.|ure)?\b", re.I)
@@ -457,9 +457,9 @@ def adjust_leaf_bboxes_after_previous_exercise(
     ``equation_blank_bboxes`` reflect the updated regions.
     """
     from collections import defaultdict
-    from pipeline.pdf_parser.answer_fields import assign_answer_field_bboxes
-    from pipeline.pdf_parser.layout import cell_for_point
-    from pipeline.pdf_parser.regions import clip_horizontal_bounds
+    from pipeline.scaffold.pdf_parser.answer_fields import assign_answer_field_bboxes
+    from pipeline.scaffold.pdf_parser.layout import cell_for_point
+    from pipeline.scaffold.pdf_parser.regions import clip_horizontal_bounds
 
     leaves: list[Question] = [q for q in flatten_questions(questions) if not q.subquestions]
 

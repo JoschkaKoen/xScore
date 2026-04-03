@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pipeline.models import ExamScaffold, PageAssignment
+from pipeline.shared.models import ExamScaffold, PageAssignment
 
 
 def _build_prompt(question_numbers: list[str]) -> str:
@@ -64,8 +64,8 @@ def _call_kimi(client: Any, image_b64: str, prompt: str) -> str:
             )
             return resp.choices[0].message.content or ""
         except Exception as exc:
-            from pipeline.terminal_ui import warn_line
-            warn_line(f"[answer_detection] API error (attempt {attempt}/3): {exc}")
+            from pipeline.shared.terminal_ui import warn_line
+            warn_line(f"[detect_answered_questions] API error (attempt {attempt}/3): {exc}")
             if attempt < 3:
                 time.sleep(2 ** attempt)
     return ""
@@ -93,8 +93,8 @@ def detect_answered_exercises(
     question_numbers = [q.number for q in scaffold.gradable_questions]
     prompt = _build_prompt(question_numbers)
 
-    from pipeline.terminal_ui import tool_line
-    tool_line("answer_detection", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
+    from pipeline.shared.terminal_ui import tool_line
+    tool_line("detect_answered_questions", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
     all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
 
     result: dict[str, list[str]] = {}

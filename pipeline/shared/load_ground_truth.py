@@ -31,7 +31,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pipeline.models import ExamScaffold, StudentResult
+from pipeline.shared.models import ExamScaffold, StudentResult
 
 
 # ---------------------------------------------------------------------------
