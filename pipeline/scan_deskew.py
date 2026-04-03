@@ -534,8 +534,9 @@ def deskew_pdf_raster(
                 tool_line("deskew", f"    bot lines: {_lines_str(bot_lines)}")
 
     if not verbose:
-        tops = [results[i][2] for i in range(n)]
-        bots = [results[i][3] for i in range(n)]
+        # _PageResult: (image, top_angle, bot_angle, top_lines, bot_lines)
+        tops = [results[i][1] for i in range(n)]
+        bots = [results[i][2] for i in range(n)]
         note_line(
             f"deskew: correction angles  top [{min(tops):+.2f}° … {max(tops):+.2f}°]  "
             f"bot [{min(bots):+.2f}° … {max(bots):+.2f}°]"
