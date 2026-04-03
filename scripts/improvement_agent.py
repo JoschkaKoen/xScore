@@ -7,8 +7,10 @@ Runs for 2-4 hours, targeting 100% accuracy on first 6 students, then students 6
 
 Usage:
     source .venv/bin/activate
-    python improvement_agent.py
+    python scripts/improvement_agent.py
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -18,12 +20,16 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from config import DEFAULT_PDF
 
 # Configuration
-IMPROVEMENT_LOG = Path("improvement_log.jsonl")
-CONFIG_PATH = Path("config.py")
-PROFILE_PATH = Path("extraction/profiles/igcse_physics.py")
+IMPROVEMENT_LOG = _REPO_ROOT / "improvement_log.jsonl"
+CONFIG_PATH = _REPO_ROOT / "config.py"
+PROFILE_PATH = _REPO_ROOT / "extraction/profiles/igcse_physics.py"
 TARGET_ACCURACY = 100.0
 PHASE_1_START = 1  # First student
 PHASE_1_END = 6    # Last student of phase 1
@@ -51,26 +57,30 @@ def log_event(event_type: str, data: dict):
 def run_eval(start_student: int = 1, end_student: int = 6) -> dict:
     """Run evaluation on specified student range and return results."""
     pdf_path = Path(DEFAULT_PDF)
-    
+    if not pdf_path.is_absolute():
+        pdf_path = _REPO_ROOT / pdf_path
+
     # Use the --first-students flag for end_student
     # We'll filter for start_student later
     cmd = [
-        sys.executable, "extract_answers.py",
+        sys.executable,
+        str(_REPO_ROOT / "scripts" / "extract_answers.py"),
         str(pdf_path),
-        "--first-students", str(end_student)
+        "--first-students",
+        str(end_student),
     ]
-    
+
     print(f"\n{'='*60}")
     print(f"Running eval: students {start_student}-{end_student}")
     print(f"{'='*60}")
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(_REPO_ROOT))
     print(result.stdout)
     if result.stderr:
         print("STDERR:", result.stderr)
     
     # Parse the result from the saved JSON
-    eval_json = Path(f"{pdf_path.stem}_first{end_student}_eval.json")
+    eval_json = _REPO_ROOT / f"{pdf_path.stem}_first{end_student}_eval.json"
     if eval_json.exists():
         with open(eval_json) as f:
             data = json.load(f)

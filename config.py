@@ -16,10 +16,10 @@ How to run (from repo root, with venv activated and dependencies installed):
     python autograder.py input.pdf output.pdf
 
   Extract answers — IGCSE-style profile, uses AI_MODEL below (Gemini or Kimi):
-    python extract_answers.py
-    python extract_answers.py "path/to/scan.pdf"
-    python extract_answers.py --first-students N   # eval first N pages vs ground truth
-    python extract_answers.py --skip               # resume from existing JSON
+    python scripts/extract_answers.py
+    python scripts/extract_answers.py "path/to/scan.pdf"
+    python scripts/extract_answers.py --first-students N   # eval first N pages vs ground truth
+    python scripts/extract_answers.py --skip               # resume from existing JSON
 
   Activate the virtual environment: 
     source .venv/bin/activate 
@@ -29,7 +29,7 @@ How to run (from repo root, with venv activated and dependencies installed):
     python grade.py "..." --folder "path/to/exam_folder"
     # Optional: --dpi N  --no-cleanup  --output-dir DIR  --no-report
 
-Tunables below apply mainly to extract_answers.py / extraction/; pipeline/* and
+Tunables below apply mainly to scripts/extract_answers.py / extraction/; pipeline/* and
 grade.py also read PIPELINE_*, NAME_*, etc. from this file.
 """
 

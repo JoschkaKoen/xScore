@@ -13,6 +13,10 @@ import json
 import sys
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from pipeline.scaffold import _cache_path, _find_exam_pdf, question_from_dict
 from pipeline.scaffold_overlay import write_scaffold_boxes_pdf
 

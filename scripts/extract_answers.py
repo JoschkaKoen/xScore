@@ -5,16 +5,21 @@ extract_answers.py
 CLI entry point: extracts student names + handwritten MC answers from scanned
 exam PDFs using the configured vision model. See ``extraction/`` for modules.
 
-    python extract_answers.py
-    python extract_answers.py "Space Physics Unit Test/scan 300dpi.pdf"
+    python scripts/extract_answers.py
+    python scripts/extract_answers.py "Space Physics Unit Test/scan 300dpi.pdf"
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from dotenv import load_dotenv
 from pdf2image import convert_from_path
@@ -88,7 +93,7 @@ def main() -> None:
     from pipeline.terminal_ui import BOLD, BLUE, icon, note_line, paint
 
     print()
-    print(paint(f"  {icon('spark')}  extract_answers.py  —  Auto-Grader {__version__}", BLUE, BOLD))
+    print(paint(f"  {icon('spark')}  scripts/extract_answers.py  —  Auto-Grader {__version__}", BLUE, BOLD))
     note_line(f"AI model: {AI_MODEL}")
 
     pdf_path = Path(args.pdf)

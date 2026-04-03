@@ -6,7 +6,7 @@ Auto-Grader is a Python-based CLI toolchain for processing scanned IGCSE Physics
 
 1. **PDF Preprocessing** (`autograder.py` + `pipeline/scan_deskew.py`): Cleans scanned exam PDFs in three passes: (1) blank/white page removal; (2) 90-degree auto-rotation using Tesseract OSD, with pages copied losslessly via `pikepdf`; (3) optional fine deskew — each A3-portrait page is split into top/bottom A4 halves, sub-degree skew is detected per half via vertical-projection variance (OpenCV), correction is applied at full resolution with bicubic interpolation, and the result is embedded as a rasterised PDF. The `--deskew` CLI flag enables pass 3 from `autograder.py`; `pipeline/pdf_cleanup.py` runs it automatically (pass `deskew=False` to skip).
 
-2. **Answer Extraction** (`extract_answers.py` + `extraction/` package): Uses Gemini or Kimi vision APIs (see `config.AI_MODEL`) to extract student names and handwritten multiple-choice answers (Questions 38-40), with structured output via Pydantic exam profiles.
+2. **Answer Extraction** (`scripts/extract_answers.py` + `extraction/` package): Uses Gemini or Kimi vision APIs (see `config.AI_MODEL`) to extract student names and handwritten multiple-choice answers (Questions 38-40), with structured output via Pydantic exam profiles.
 
 The project is designed for educators who need to process batches of scanned exam papers and extract student responses for grading or analysis.
 
@@ -35,7 +35,13 @@ The project is designed for educators who need to process batches of scanned exa
 ```
 Auto-Grader/
 ├── autograder.py              # Main PDF cleaning script
-├── extract_answers.py         # CLI entry for answer extraction
+├── scripts/                   # Standalone CLIs (not driven by grade.py)
+│   ├── extract_answers.py     # Answer extraction CLI
+│   ├── bench_pdf_render.py    # Benchmark utility for PDF→image conversion
+│   ├── benchmark_eval_loop.py # Repeated eval driver (subprocess CLI)
+│   ├── improvement_agent.py   # Iterative tuning helper (optional)
+│   ├── visualize_scaffold_boxes.py
+│   └── visualize_scan_overlays.py
 ├── config.py                  # Tunables: AI_MODEL, EXAM_PROFILE, DPI, paths, etc.
 ├── extraction/                # Answer extraction package
 │   ├── profiles/              # ExamProfile: prompt + Pydantic schema + answer_fields
@@ -44,8 +50,6 @@ Auto-Grader/
 │   ├── ground_truth.py        # Load GT, fuzzy names, accuracy
 │   ├── reporting.py           # JSON I/O, LaTeX/PDF report, terminal summary
 │   └── eval.py                # extract_first_n_students_eval
-├── bench_pdf_render.py        # Benchmark utility for PDF→image conversion
-├── benchmark_eval_loop.py     # Repeated eval driver (subprocess CLI)
 ├── requirements.txt           # Python dependencies
 ├── README.md                  # User-facing documentation
 ├── AGENTS.md                  # This file
@@ -96,20 +100,20 @@ python autograder.py scan.pdf cleaned.pdf \
 - `--blank-threshold`: Grayscale mean ≥ this → candidate blank (default: 250)
 - `--blank-std`: Grayscale std ≤ this → candidate blank (default: 6)
 
-### Answer Extraction (extract_answers.py)
+### Answer Extraction (scripts/extract_answers.py)
 
 ```bash
 # Process default PDF (``config.DEFAULT_PDF``, e.g. Space Physics scan)
-python extract_answers.py
+python scripts/extract_answers.py
 
 # Process specific PDF
-python extract_answers.py "Space Physics Unit Test/scan 300dpi.pdf"
+python scripts/extract_answers.py "Space Physics Unit Test/scan 300dpi.pdf"
 
 # Process first N students only (for evaluation)
-python extract_answers.py --first-students 12
+python scripts/extract_answers.py --first-students 12
 
 # Resume interrupted run (skip already processed pages)
-python extract_answers.py --skip
+python scripts/extract_answers.py --skip
 ```
 
 **Output files** (under `output/` for full runs; eval JSON in project root):
@@ -146,9 +150,9 @@ Main functions:
 - `deskew_page_halves(page_gray)` → (array, top_angle, bot_angle): Split at midpoint, detect and correct each half independently, reassemble.
 - `deskew_pdf_raster(input_pdf, output_pdf, dpi, reflines_sidecar=None)` → Path: Render all pages, deskew per page, assemble via PyMuPDF. *input_pdf* and *output_pdf* must resolve to different paths (never overwrite the source). Optional `reflines_sidecar` fixes the JSON path when writing the PDF to a temp file first. Prints per-page angles to console.
 
-### extract_answers.py + `extraction/`
+### scripts/extract_answers.py + `extraction/`
 
-- **CLI** (`extract_answers.py`): `main()`, argparse, full-PDF loop; loads dotenv once at startup.
+- **CLI** (`scripts/extract_answers.py`): `main()`, argparse, full-PDF loop; loads dotenv once at startup.
 - **Profiles** (`extraction/profiles/`): `ExamProfile` bundles `prompt`, Pydantic `schema`, and `answer_fields`. Selector: `EXAM_PROFILE` in `config.py`.
 - **Providers** (`extraction/providers/`): `GeminiProvider`, `KimiProvider`; `get_provider()`, `call_ocr_api()`, `multi_pass_extract()` for eval.
 - **Ground truth** (`extraction/ground_truth.py`): Fuzzy name matching and accuracy vs reference file.
@@ -215,7 +219,7 @@ Extraction uses three confidence tiers:
 ### Benchmarking PDF Rendering
 
 ```bash
-python bench_pdf_render.py [path/to.pdf] --dpi 300
+python scripts/bench_pdf_render.py [path/to.pdf] --dpi 300
 ```
 
 Times the PDF→image conversion without API calls.
@@ -223,7 +227,7 @@ Times the PDF→image conversion without API calls.
 ### Evaluation Mode
 
 ```bash
-python extract_answers.py --first-students 12
+python scripts/extract_answers.py --first-students 12
 ```
 
 Processes only first N pages and compares against ground truth, printing:
@@ -262,7 +266,7 @@ The `generate_report_pdf()` function calls `xelatex` with `-interaction=nonstopm
 git status
 # Ensure no .env files, no PDF scans, no debug crops are staged
 
-git add autograder.py extract_answers.py  # etc.
+git add autograder.py scripts/extract_answers.py  # etc.
 git commit -m "Your message"
 ```
 

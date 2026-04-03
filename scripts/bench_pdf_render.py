@@ -2,12 +2,19 @@
 """
 Time pdf2image's convert_from_path only (no Gemini, no extraction).
 Usage:
-    .venv/bin/python bench_pdf_render.py [path/to.pdf] [--dpi 300]
+    .venv/bin/python scripts/bench_pdf_render.py [path/to.pdf] [--dpi 300]
 """
+from __future__ import annotations
+
 import argparse
 import os
+import sys
 import time
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from config import DEFAULT_PDF
 from pdf2image import convert_from_path

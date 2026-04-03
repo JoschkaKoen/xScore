@@ -2,17 +2,17 @@
 """
 Repeated ``--first-students`` eval for iterative tuning (intended to run on ``dev``).
 
-Runs ``extract_answers.py`` in a subprocess so each iteration exercises the real CLI.
+Runs ``scripts/extract_answers.py`` in a subprocess so each iteration exercises the real CLI.
 Append-only JSONL log with accuracy per run. Stop after a wall-clock budget (e.g. 2–4 hours).
 
 Typical workflow with an external agent: between iterations, edit prompts or helpers in
-``extract_answers.py`` on ``dev``, then let this script re-measure. You can also vary
+``scripts/extract_answers.py`` on ``dev``, then let this script re-measure. You can also vary
 ``EXTRACT_CROP_FRACTION`` or ``PDF_DPI`` in the environment between runs.
 
 Example (4 hours, 12 students, 45 minutes between runs):
 
     export GOOGLE_API_KEY=...
-    python benchmark_eval_loop.py output/exam.pdf --n 12 --max-hours 4 --sleep-seconds 2700
+    python scripts/benchmark_eval_loop.py output/exam.pdf --n 12 --max-hours 4 --sleep-seconds 2700
 """
 
 from __future__ import annotations
@@ -29,7 +29,13 @@ from pathlib import Path
 def _run_once(repo_root: Path, pdf: Path, n: int, python_exe: str) -> tuple[int, Path | None]:
     stem = pdf.stem
     eval_path = repo_root / f"{stem}_first{n}_eval.json"
-    cmd = [python_exe, str(repo_root / "extract_answers.py"), str(pdf), "--first-students", str(n)]
+    cmd = [
+        python_exe,
+        str(repo_root / "scripts" / "extract_answers.py"),
+        str(pdf),
+        "--first-students",
+        str(n),
+    ]
     proc = subprocess.run(
         cmd,
         cwd=str(repo_root),
@@ -41,8 +47,8 @@ def _run_once(repo_root: Path, pdf: Path, n: int, python_exe: str) -> tuple[int,
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Time-bounded eval loop for extract_answers.py")
-    parser.add_argument("pdf", type=Path, help="Input PDF (same as extract_answers.py)")
+    parser = argparse.ArgumentParser(description="Time-bounded eval loop for scripts/extract_answers.py")
+    parser.add_argument("pdf", type=Path, help="Input PDF (same as scripts/extract_answers.py)")
     parser.add_argument("--n", type=int, default=12, metavar="N", help="First N students (default: 12)")
     parser.add_argument(
         "--max-hours",
@@ -64,7 +70,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parent.parent
     pdf = args.pdf if args.pdf.is_absolute() else repo_root / args.pdf
     if not pdf.exists():
         print(f"ERROR: PDF not found: {pdf}", file=sys.stderr)

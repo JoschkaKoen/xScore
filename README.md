@@ -33,7 +33,7 @@ Install system dependencies:
 | Goal | Tool |
 |------|------|
 | Fix rotation and remove blank pages (no AI) | `autograder.py` |
-| Extract answers from a fixed layout (e.g. IGCSE Physics MC) | `extract_answers.py` |
+| Extract answers from a fixed layout (e.g. IGCSE Physics MC) | `scripts/extract_answers.py` |
 | Grade a full exam folder from a plain-English prompt | `grade.py` |
 
 ---
@@ -72,15 +72,15 @@ The toolchain **never overwrites the original scan PDF**: `autograder.py` refuse
 
 ---
 
-## `extract_answers.py` — profile-based extraction
+## `scripts/extract_answers.py` — profile-based extraction
 
 Reads answers from fixed regions defined by `EXAM_PROFILE` in `config.py`. The default profile targets IGCSE Physics multiple choice. Supports Gemini or Kimi (set `AI_MODEL` in `config.py`).
 
 ```bash
-python extract_answers.py                      # run on DEFAULT_PDF
-python extract_answers.py "path/to/scan.pdf"   # run on a specific file
-python extract_answers.py --first-students 12  # eval first 12 pages vs ground truth
-python extract_answers.py --skip               # resume from existing JSON
+python scripts/extract_answers.py                      # run on DEFAULT_PDF
+python scripts/extract_answers.py "path/to/scan.pdf"   # run on a specific file
+python scripts/extract_answers.py --first-students 12  # eval first 12 pages vs ground truth
+python scripts/extract_answers.py --skip               # resume from existing JSON
 ```
 
 Output is written to `output/`. Evaluation mode also prints colour-coded accuracy.
@@ -172,10 +172,10 @@ All tunables live in `config.py`: AI model, DPI, crop fractions, API retry setti
 
 | Setting | Purpose |
 |---------|---------|
-| `AI_MODEL` | Model for `extract_answers.py` (`gemini-*` or `kimi-*`) |
+| `AI_MODEL` | Model for `scripts/extract_answers.py` (`gemini-*` or `kimi-*`) |
 | `PIPELINE_AI_MODEL` | Model for `grade.py` |
 | `PDF_DPI` | DPI for image conversion |
-| `EXAM_PROFILE` | Layout profile for `extract_answers.py` |
+| `EXAM_PROFILE` | Layout profile for `scripts/extract_answers.py` |
 
 ---
 
@@ -183,7 +183,7 @@ All tunables live in `config.py`: AI model, DPI, crop fractions, API retry setti
 
 Both tools support accuracy evaluation, but they use separate files:
 
-| | `extract_answers.py` | `grade.py` |
+| | `scripts/extract_answers.py` | `grade.py` |
 |---|---|---|
 | File location | `GROUND_TRUTH_PATH` in `config.py` | Inside the exam folder |
 | Compared against | Per-page extraction records | `StudentResult` from the pipeline |
@@ -195,10 +195,10 @@ Both tools support accuracy evaluation, but they use separate files:
 
 ```
 autograder.py        PDF cleaning (rotation + blank removal)
-extract_answers.py   Profile-based answer extraction CLI
+scripts/             Standalone CLIs (extract_answers, benchmarks, visualize_*, improvement_agent)
 grade.py             Prompt-driven grading CLI
 config.py            Models, DPI, paths, and all tunables
-extraction/          Profiles, AI providers, eval, reporting (extract_answers.py)
+extraction/          Profiles, AI providers, eval, reporting (used by scripts/extract_answers.py)
 pipeline/            Full grading pipeline modules (grade.py)
   pdf_parser/        Vector PDF exam parser (scaffold builder)
   scaffold.py        Scaffold cache: build, load, save
