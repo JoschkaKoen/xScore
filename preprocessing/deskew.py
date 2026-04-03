@@ -38,7 +38,11 @@ from PIL import Image
 
 _SWEEP_MIN = -3.0           # deg
 _SWEEP_MAX = 3.0            # deg
-_SWEEP_STEP = 0.01          # deg
+_SWEEP_STEP = 0.01          # deg — fine pass only (full-resolution thresh)
+_SWEEP_PROXY_SCALE = 4      # linear downsample for coarse pass only (4× → 16× fewer pixels/warp)
+_SWEEP_COARSE_STEP = 0.1    # deg — coarse pass (safe on proxy; geometric res ~0.26° at 4×)
+_SWEEP_FINE_HALF = 0.15     # deg — fine window ± this around coarse best (covers grid error)
+_MIN_PROXY_DIM = 80         # px — if proxy smaller, run coarse sweep on full-res thresh instead
 _MIN_ABS_DEG = 0.05         # skip warp if detected angle is below this
 
 # Morphological line detection
@@ -97,27 +101,18 @@ class AnchorPoint:
 # Angle detection
 # ---------------------------------------------------------------------------
 
-def get_deskew_angle(gray: np.ndarray) -> float:
-    """Detect the skew angle of *gray* via vertical-projection variance.
-
-    Runs Otsu binarisation and the angle sweep at **native resolution** of *gray*
-    (no downsample), so each warp matches the pixels used for deskew_image.
-
-    Args:
-        gray: Grayscale uint8 numpy array (any size).
-
-    Returns:
-        Best rotation angle in degrees (positive = CCW).
-        The caller should rotate by *-angle* to straighten the image.
-    """
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
+def _best_angle_projection_variance(
+    thresh: np.ndarray,
+    angle_min: float,
+    angle_max: float,
+    angle_step: float,
+) -> float:
+    """Return angle in [*angle_min*, *angle_max*] that maximises column-sum variance."""
     h, w = thresh.shape[:2]
     cx, cy = w // 2, h // 2
     best_angle = 0.0
     best_var = -1.0
-
-    for angle in np.arange(_SWEEP_MIN, _SWEEP_MAX + _SWEEP_STEP / 2, _SWEEP_STEP):
+    for angle in np.arange(angle_min, angle_max + angle_step / 2, angle_step):
         M = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
         rotated = cv2.warpAffine(
             thresh, M, (w, h),
@@ -130,8 +125,51 @@ def get_deskew_angle(gray: np.ndarray) -> float:
         if v > best_var:
             best_var = v
             best_angle = float(angle)
-
     return best_angle
+
+
+def get_deskew_angle(gray: np.ndarray) -> float:
+    """Detect the skew angle of *gray* via vertical-projection variance.
+
+    Two-stage sweep: a **coarse** pass (0.1° steps) on a 1/4-scale Otsu proxy for
+    speed, then a **fine** pass (0.01° steps) on full-resolution Otsu within
+    ± ``_SWEEP_FINE_HALF``° of the coarse winner so 0.01° accuracy matches
+    the legacy single-pass behaviour.
+
+    Args:
+        gray: Grayscale uint8 numpy array (any size).
+
+    Returns:
+        Best rotation angle in degrees (positive = CCW).
+        The caller should rotate by *-angle* to straighten the image.
+    """
+    h, w = gray.shape[:2]
+    pw, ph = w // _SWEEP_PROXY_SCALE, h // _SWEEP_PROXY_SCALE
+
+    if min(pw, ph) >= _MIN_PROXY_DIM:
+        small = cv2.resize(gray, (pw, ph), interpolation=cv2.INTER_AREA)
+        _, thresh_coarse = cv2.threshold(
+            small, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+        )
+        coarse_best = _best_angle_projection_variance(
+            thresh_coarse, _SWEEP_MIN, _SWEEP_MAX, _SWEEP_COARSE_STEP
+        )
+    else:
+        _, thresh_coarse = cv2.threshold(
+            gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+        )
+        coarse_best = _best_angle_projection_variance(
+            thresh_coarse, _SWEEP_MIN, _SWEEP_MAX, _SWEEP_COARSE_STEP
+        )
+
+    _, thresh_full = cv2.threshold(
+        gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+    )
+    fine_lo = max(_SWEEP_MIN, coarse_best - _SWEEP_FINE_HALF)
+    fine_hi = min(_SWEEP_MAX, coarse_best + _SWEEP_FINE_HALF)
+    return _best_angle_projection_variance(
+        thresh_full, fine_lo, fine_hi, _SWEEP_STEP
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +556,10 @@ def deskew_pdf_raster(
     if verbose:
         print()
         tool_line("deskew", f"Rendering {input_pdf.name} at {dpi} DPI …")
-        tool_line("deskew", "Angle detection: full-resolution halves (no proxy downsample)")
+        tool_line(
+            "deskew",
+            "Angle detection: coarse 0.1° on ¼-scale proxy, fine 0.01° at full resolution",
+        )
     else:
         tool_line(
             "deskew",

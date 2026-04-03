@@ -21,7 +21,7 @@ from PIL import Image
 # Configuration defaults
 # ---------------------------------------------------------------------------
 
-ANALYSIS_DPI = 300          # DPI for rendering pages for OSD detection only.
+ANALYSIS_DPI = 150          # DPI for OSD only (Tesseract needs ~70+; 150 is plenty for 90° detection).
 BLANK_DPI = 72              # Low DPI for fast blank-page detection.
 BLANK_MEAN_THRESHOLD = 250  # Pages with grayscale mean above this are considered blank (0-255)
 BLANK_STD_THRESHOLD = 6     # Pages with grayscale std below this are considered blank
