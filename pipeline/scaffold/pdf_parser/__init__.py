@@ -3,7 +3,7 @@
 Layout and margin anchors live in :mod:`pipeline.scaffold.pdf_parser.layout` and
 :mod:`pipeline.scaffold.pdf_parser.regions`; stem heuristics in :mod:`pipeline.scaffold.pdf_parser.content`;
 Cambridge-style sub-parts in :mod:`pipeline.scaffold.pdf_parser.subparts`; assembly in
-:mod:`pipeline.scaffold.pdf_parser.build`. Import from ``pipeline.pdf_parser`` for the stable
+:mod:`pipeline.scaffold.pdf_parser.build`. Import from ``pipeline.scaffold.pdf_parser`` for the stable
 public API below.
 """
 
