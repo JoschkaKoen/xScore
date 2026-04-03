@@ -127,7 +127,7 @@ def pipeline_step(readme_step: int, title: str, *, width: int = 60) -> None:
 
 def progress_line(message: str) -> None:
     """Highlight the current action (brighter than :func:`info_line`)."""
-    print(paint(f"  {icon('info')}  {message}", CYAN))
+    print(paint(f"  {icon('info')}  {message}", CYAN), flush=True)
 
 
 def info_line(message: str, *, key: str = "info") -> None:
@@ -135,7 +135,7 @@ def info_line(message: str, *, key: str = "info") -> None:
 
 
 def ok_line(message: str) -> None:
-    print(paint(f"  {icon('ok')}  {message}", GREEN))
+    print(paint(f"  {icon('ok')}  {message}", GREEN), flush=True)
 
 
 def warn_line(message: str) -> None:

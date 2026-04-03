@@ -81,7 +81,6 @@ def process_pdf(
         CYAN,
         err_line,
         icon,
-        info_line,
         note_line,
         ok_line,
         paint,
@@ -176,12 +175,6 @@ def process_pdf(
             else:
                 parts.append(f"{n}×{angle}°")
         rot_s = ", ".join(parts) if parts else "—"
-        info_line(
-            f"{input_path.name}: {total_pages}p @ {BLANK_DPI} DPI "
-            f"(blank mean≥{blank_mean} σ≤{blank_std}) · "
-            f"drop {len(blank_page_nums)} → {len(content_page_nums)} content · "
-            f"OSD @ {analysis_dpi} DPI ({num_workers}w) · {rot_s}"
-        )
 
     src_pdf = pikepdf.open(str(input_path))
     out_pdf = pikepdf.new()
@@ -212,7 +205,8 @@ def process_pdf(
         ok_line("Passes 1–2 complete (rotate + de-blank).")
     else:
         ok_line(
-            f"Prep done · {len(content_page_nums)}/{total_pages} pages → {output_path.name}"
+            f"Prep: {len(content_page_nums)}/{total_pages} pages kept "
+            f"({len(blank_page_nums)} blank removed) · {rot_s} → {output_path.name}"
         )
     if verbose:
         print()

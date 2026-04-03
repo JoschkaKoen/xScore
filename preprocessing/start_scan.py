@@ -101,7 +101,7 @@ def cleanup_pdf(
                     pass
         return output
 
-    tool_line("start_scan", f"Cleaning {match.name} → {output.name} (DPI {dpi}) …")
+    tool_line("start_scan", f"Clean scan: {match.name} → {output.name} @ {dpi} DPI")
     process_pdf(
         input_path=str(match),
         output_path=str(output),
@@ -119,6 +119,7 @@ def cleanup_pdf(
             dpi=dpi,
             reflines_sidecar=output.with_name(f"{output.stem}_anchors.json"),
             verbose=False,
+            saved_as=output.name,
         )
         shutil.move(str(tmp_deskew), str(output))
         from preprocessing.draw_scaffold_bounding_boxes import write_scan_debug_pdfs_after_deskew

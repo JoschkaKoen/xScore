@@ -493,7 +493,7 @@ def overlay_projected_scaffold_on_scan_pdf(
 
     all_nodes = flatten_questions(questions)
 
-    from shared.terminal_ui import tool_line, warn_line
+    from shared.terminal_ui import ok_line, tool_line, warn_line
 
     doc = fitz.open(str(deskewed_pdf))
     try:
@@ -561,9 +561,8 @@ def overlay_projected_scaffold_on_scan_pdf(
     if verbose:
         tool_line("overlay", f"Saved → {output_pdf}")
     else:
-        tool_line(
-            "overlay",
-            f"Projected {total_rects} scaffold rects on {n_overlay} page(s) → {output_pdf.name}",
+        ok_line(
+            f"Scaffold overlay: {total_rects} boxes / {n_overlay} pages → {output_pdf.name}",
         )
     return output_pdf
 
