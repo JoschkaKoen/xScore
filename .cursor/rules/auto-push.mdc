@@ -5,25 +5,13 @@ alwaysApply: true
 
 # Auto-Push After Changes
 
-After completing **any set of code changes**, always finish by running a full git push — without being asked.
+After completing any code changes, always run a full git push without being asked:
 
-## Required steps (in order)
+1. `git status` + `git diff` to review changes
+2. Stage with `git add -u` plus explicit paths for new files
+3. `git commit -m "<concise message>"`
+4. `git push`
 
-1. `git status` — verify what is modified/untracked
-2. `git diff` — review the diff if anything looks unexpected
-3. Stage **all intended changes** explicitly: use `git add -u` for modified/deleted tracked files, plus explicit paths for any new files
-4. **Never stage**: `.env`, `*.pdf`, `Space Physics Unit Test/`, `output/`, `debug/`, `Ground Truth*`, `*_answers.*`, `*_eval.json`
-5. `git commit -m "<concise message describing the change>"`
-6. `git push`
+**Never stage**: `.env`, `*.pdf`, `output/`, `debug/`, `Ground Truth*`, `*_eval.json`
 
-## When to auto-push
-
-- After any edit to source files (`.py`, `.md`, `.txt`, `.mdc`, `config.py`, etc.)
-- After creating new files that belong in version control
-- After completing a multi-step task — push once at the end, not after every individual file edit
-
-## When NOT to push
-
-- If the only changes are gitignored files (PDFs, `.env`, outputs, debug crops)
-- If the user explicitly says not to commit or push
-- If there are no staged changes after filtering out ignored files
+Skip if the only changes are gitignored files, or the user says not to.
