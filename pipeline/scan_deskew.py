@@ -343,7 +343,7 @@ def deskew_pdf_raster(
 
 # Default overlay stroke: vivid pink (RGB 0–1)
 _OVERLAY_PINK: tuple[float, float, float] = (1.0, 0.35, 0.78)
-_OVERLAY_LINE_WIDTH_PT = 2.5
+_OVERLAY_LINE_WIDTH_PT = 0.35
 
 
 def overlay_reflines_on_pdf(
