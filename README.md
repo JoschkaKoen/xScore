@@ -103,7 +103,11 @@ python grade.py "check the first 5 students' answers" --dpi 300
 | `--dpi N` | Override image DPI |
 | `--skip-clean-scan` | Skip class-scan prep; use `output/<exam_stem>/cleaned_scan.pdf`, a legacy cleaned scan in the exam folder, or a `*scan*.pdf` there |
 | `--force-clean-scan` | Ignore `cleaned_scan.pdf` cache and run full clean + deskew again (not combinable with `--skip-clean-scan`) |
+| `--rescaffold` | Delete scaffold cache before building (force re-parse) |
+| `--through-step N` | Exit after pipeline step `N` (1–11); see table below |
 | `--no-report` | Print results to terminal only; skip LaTeX/PDF |
+
+The same options (except `--version`) can be implied by the **natural-language prompt**: Kimi returns JSON with fields such as `folder_path`, `skip_clean_scan`, `through_step`, etc. **CLI flags combine with OR** for booleans (`--skip-clean-scan` or prompt says “skip cleaning”). **`--folder`** and **`--dpi`** and **`--through-step`** override the prompt when you pass them.
 
 Per-exam artifacts and run reports are always under `output/<exam_stem>/` and `output/<exam_stem>/runs/<timestamp>/` (not configurable).
 
@@ -117,8 +121,8 @@ When you run `grade.py`, it executes these steps in order:
 
 | Step | Module | What it does |
 |------|--------|--------------|
-| 1. Parse prompt | `prompt_parser.py` | Converts your plain-English instruction into a structured task (type, student filter, DPI, folder hint) |
-| 2. Find exam folder | `folder_discovery.py` | Resolves the exam folder from `--folder`, the parsed hint, or by scanning for directories named like `*test*` / `*exam*` |
+| 1. Parse prompt | `prompt_parser.py` | Converts plain English into a structured task (type, students, DPI, folder hint/path, scan/scaffold/report flags, optional `through_step`) |
+| 2. Find exam folder | `folder_discovery.py` | Resolves the exam folder from `--folder`, then prompt `folder_path`, then hint / heuristic |
 | 3. Load roster | `student_list.py` | Reads student names from `StudentList.xlsx` in the exam folder |
 | 4. Build scaffold | `scaffold.py` | Parses the exam PDF and answer key to produce a question tree with marks, bounding boxes, and correct answers (cached under `output/<exam_stem>/`) |
 | 5. Clean scan | `pdf_cleanup.py` | Same passes as autograder + deskew; writes `cleaned_scan.pdf` (and sidecar) under `output/<exam_stem>/`; skipped with `--skip-clean-scan` |

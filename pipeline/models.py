@@ -18,6 +18,13 @@ class TaskInstruction:
     student_filter: StudentFilter = field(default_factory=StudentFilter)
     dpi: int = 400
     folder_hint: str | None = None
+    # Optional explicit exam folder path (from prompt); lower priority than CLI --folder
+    folder_path: str | None = None
+    skip_clean_scan: bool = False
+    force_clean_scan: bool = False
+    rescaffold: bool = False
+    through_step: int | None = None  # 1–11: exit after README pipeline step N
+    no_report: bool = False
 
 
 @dataclass

@@ -27,7 +27,8 @@ How to run (from repo root, with venv activated and dependencies installed):
   Grade an exam folder from a natural-language prompt (uses Kimi only; KIMI_API_KEY):
     python grade.py "check all multiple choice question answers"
     python grade.py "..." --folder "path/to/exam_folder"
-    # Optional: --dpi N  --skip-clean-scan  --force-clean-scan  --no-report
+    # Optional CLI (also inferable from prompt JSON): --dpi  --folder  --skip-clean-scan
+    #   --force-clean-scan  --rescaffold  --through-step N  --no-report
 
 Tunables below apply mainly to scripts/extract_answers.py / extraction/; pipeline/* and
 grade.py also read PIPELINE_*, NAME_*, etc. from this file.

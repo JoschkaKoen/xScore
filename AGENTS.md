@@ -120,6 +120,10 @@ python scripts/extract_answers.py --skip
 - `output/extract_answers/<safe_stem>/{stem}_answers.{json,tex,pdf}` — Full extraction runs
 - `debug/debug_crops_{stem}/` — Cropped page images (if enabled)
 
+## grade.py prompt parsing
+
+`pipeline/prompt_parser.parse_prompt` calls Kimi with a fixed JSON schema (`TaskInstruction`): `task_type`, `student_filter`, `dpi`, `folder_hint`, `folder_path`, `skip_clean_scan`, `force_clean_scan`, `rescaffold`, `through_step` (1–11 or null), `no_report`. In `grade.py`, CLI flags merge with these: boolean options use **OR**; `--folder`, `--dpi`, and `--through-step` **override** the parsed values when provided. `find_folder` priority: `--folder` → `folder_path` from parse → `folder_hint` → heuristic.
+
 ## Code Organization
 
 ### autograder.py

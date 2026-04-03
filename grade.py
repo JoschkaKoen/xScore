@@ -80,32 +80,32 @@ def parse_args() -> argparse.Namespace:
         "--folder",
         default=None,
         metavar="PATH",
-        help="Exam folder path (overrides AI-detected folder hint)",
+        help="Exam folder path (overrides folder_path / folder_hint from prompt parse)",
     )
     parser.add_argument(
         "--dpi",
         type=int,
         default=None,
         metavar="N",
-        help="Rendering DPI for page images (overrides AI-detected DPI, default 400)",
+        help="Rendering DPI (overrides dpi from prompt parse; default from parse is 400)",
     )
     parser.add_argument(
         "--skip-clean-scan",
         action="store_true",
         default=False,
-        help="Skip class-scan prep (no rotate/blank/deskew); use output/<stem>/cleaned_scan.pdf, legacy cleaned scan, or a *scan*.pdf in the exam folder",
+        help="Skip class-scan prep (OR with same flag from prompt parse)",
     )
     parser.add_argument(
         "--force-clean-scan",
         action="store_true",
         default=False,
-        help="Ignore cleaned_scan cache and run full clean + deskew again",
+        help="Ignore cleaned_scan cache (OR with same flag from prompt parse)",
     )
     parser.add_argument(
         "--rescaffold",
         action="store_true",
         default=False,
-        help="Delete scaffolds/scaffold_cache.json before building (force re-parse, step 4)",
+        help="Force scaffold rebuild (OR with same flag from prompt parse)",
     )
     parser.add_argument(
         "--through-step",
@@ -113,13 +113,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="N",
         choices=list(range(1, 12)),
-        help="Exit after README pipeline step N (1–11). E.g. 6 = after assign pages, before exercise detection.",
+        help="Exit after pipeline step N (1–11); overrides through_step from prompt if set",
     )
     parser.add_argument(
         "--no-report",
         action="store_true",
         default=False,
-        help="Skip PDF report generation (terminal output only)",
+        help="Skip LaTeX/PDF report (OR with same flag from prompt parse)",
     )
     args = parser.parse_args()
     if args.skip_clean_scan and args.force_clean_scan:
@@ -197,13 +197,41 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     pipeline_step(1, "Parse natural language prompt")
     info_line(f"Prompt: {args.prompt!r}")
     instruction = parse_prompt(args.prompt, client=client, dpi_override=args.dpi)
+
+    skip_clean_scan = args.skip_clean_scan or instruction.skip_clean_scan
+    force_clean_scan = args.force_clean_scan or instruction.force_clean_scan
+    if skip_clean_scan and force_clean_scan:
+        err_line("Cannot combine skip and force class-scan cleaning (CLI and/or prompt).")
+        raise SystemExit(1)
+    rescaffold = args.rescaffold or instruction.rescaffold
+    through_step = (
+        args.through_step
+        if args.through_step is not None
+        else instruction.through_step
+    )
+    no_report = args.no_report or instruction.no_report
+
     note_line(
         f"Task: {instruction.task_type}  |  "
         f"Students: {instruction.student_filter.mode}  |  "
         f"DPI: {instruction.dpi}"
     )
-    if args.through_step == 1:
-        info_line("--through-step 1: stopping after parse prompt (README table).")
+    _flag_bits = [
+        x
+        for x in (
+            "skip_clean_scan" if skip_clean_scan else None,
+            "force_clean_scan" if force_clean_scan else None,
+            "rescaffold" if rescaffold else None,
+            f"through_step={through_step}" if through_step is not None else None,
+            "no_report" if no_report else None,
+        )
+        if x
+    ]
+    if _flag_bits:
+        note_line("Effective flags: " + ", ".join(_flag_bits))
+
+    if through_step == 1:
+        info_line("through_step 1: stopping after parse prompt (README table).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -213,6 +241,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     folder = find_folder(
         instruction_hint=instruction.folder_hint,
         cli_override=args.folder,
+        ai_folder_path=None if args.folder else instruction.folder_path,
     )
     note_line(f"{folder}")
 
@@ -223,8 +252,8 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     note_line(f"Exam artifacts: {artifact_dir}")
     note_line(f"Run report directory: {run_dir}")
-    if args.through_step == 2:
-        info_line("--through-step 2: stopping after find exam folder (README table).")
+    if through_step == 2:
+        info_line("through_step 2: stopping after find exam folder (README table).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -234,15 +263,15 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     students = read_student_list(folder)
     roster_preview = ", ".join(students[:5]) + (" …" if len(students) > 5 else "")
     note_line(f"{len(students)} students — {roster_preview}")
-    if args.through_step == 3:
-        info_line("--through-step 3: stopping after load roster (README table).")
+    if through_step == 3:
+        info_line("through_step 3: stopping after load roster (README table).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
     # Step 5: Build exam scaffold                                         #
     # ------------------------------------------------------------------ #
     pipeline_step(4, "Build exam scaffold")
-    if args.rescaffold:
+    if rescaffold:
         for cache_p in (
             artifact_dir / "scaffolds" / "scaffold_cache.json",
             folder / "scaffolds" / "scaffold_cache.json",
@@ -250,44 +279,44 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         ):
             if cache_p.is_file():
                 cache_p.unlink()
-                warn_line(f"--rescaffold: removed {cache_p}")
+                warn_line(f"rescaffold: removed {cache_p}")
 
     scaffold = build_scaffold(folder, client=client, artifact_dir=artifact_dir)
     print_scaffold_summary(scaffold)
-    if args.through_step == 4:
-        info_line("--through-step 4: stopping after build scaffold (README table).")
+    if through_step == 4:
+        info_line("through_step 4: stopping after build scaffold (README table).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
     # Step 6: Clean scan PDF                                              #
     # ------------------------------------------------------------------ #
     pipeline_step(5, "Clean scan PDF")
-    if args.skip_clean_scan:
+    if skip_clean_scan:
         cleaned_here = artifact_dir / "cleaned_scan.pdf"
         legacy_cleaned = folder / "cleaned_scan.pdf"
         if cleaned_here.exists():
             cleaned_pdf = cleaned_here
-            info_line(f"--skip-clean-scan: using {cleaned_pdf}")
+            info_line(f"skip_clean_scan: using {cleaned_pdf}")
         elif legacy_cleaned.exists():
             cleaned_pdf = legacy_cleaned
-            info_line(f"--skip-clean-scan: using legacy {cleaned_pdf}")
+            info_line(f"skip_clean_scan: using legacy {cleaned_pdf}")
         else:
             scans = list(folder.glob("*.pdf"))
             scans = [f for f in scans if "scan" in f.name.lower()]
             if not scans:
-                err_line("--skip-clean-scan set but no scan PDF found.")
+                err_line("skip_clean_scan set but no scan PDF found.")
                 raise SystemExit(1)
             cleaned_pdf = scans[0]
-            info_line(f"--skip-clean-scan: using {cleaned_pdf.name}")
+            info_line(f"skip_clean_scan: using {cleaned_pdf.name}")
     else:
         cleaned_pdf = cleanup_pdf(
             folder,
             dpi=instruction.dpi,
-            force_clean_scan=args.force_clean_scan,
+            force_clean_scan=force_clean_scan,
             artifact_dir=artifact_dir,
         )
-    if args.through_step == 5:
-        info_line("--through-step 5: stopping after clean scan (README table).")
+    if through_step == 5:
+        info_line("through_step 5: stopping after clean scan (README table).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -304,9 +333,9 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         name_crop_fraction=NAME_CROP_FRACTION,
     )
     print_page_summary(page_map, students)
-    if args.through_step == 6:
+    if through_step == 6:
         proj = cleaned_pdf.with_name(f"{cleaned_pdf.stem}_projected_boxes.pdf")
-        info_line("--through-step 6: stopping after assign pages (README table).")
+        info_line("through_step 6: stopping after assign pages (README table).")
         note_line(f"Projected scaffold overlay (if generated): {proj}")
         raise SystemExit(0)
 
@@ -323,8 +352,8 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         dpi=NAME_RECOGNITION_DPI, client=client,
     )
     print_exercise_summary(exercise_map)
-    if args.through_step == 7:
-        info_line("--through-step 7: stopping after exercise detection (README table).")
+    if through_step == 7:
+        info_line("through_step 7: stopping after exercise detection (README table).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -337,9 +366,9 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     pipeline_step(9, "Print results")
     print_results_table(results, scaffold)
     print_grand_summary(results)
-    if args.through_step in (8, 9):
+    if through_step in (8, 9):
         info_line(
-            f"--through-step {args.through_step}: stopping after grade / results (README table)."
+            f"through_step {through_step}: stopping after grade / results (README table)."
         )
         raise SystemExit(0)
 
@@ -361,15 +390,15 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         info_line("No ground truth file in folder — skipping evaluation.")
         info_line("(Add ground_truth.txt to the exam folder to enable.)")
 
-    if args.through_step == 10:
-        info_line("--through-step 10: stopping after ground-truth step (README table).")
+    if through_step == 10:
+        info_line("through_step 10: stopping after ground-truth step (README table).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
     # Step 11: PDF report                                                 #
     # ------------------------------------------------------------------ #
     pipeline_step(11, "Generate report")
-    if not args.no_report:
+    if not no_report:
         output_tex = run_dir / "grade_report.tex"
         output_pdf = run_dir / "grade_report.pdf"
         title = f"{folder.name} — Grading Report"
@@ -383,9 +412,9 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         )
         ok_line(f"Report: {output_pdf}")
     else:
-        info_line("--no-report: skipping LaTeX/PDF.")
-    if args.through_step == 11:
-        ok_line("--through-step 11: full pipeline complete (README table).")
+        info_line("no_report: skipping LaTeX/PDF.")
+    if through_step == 11:
+        ok_line("through_step 11: full pipeline complete (README table).")
         raise SystemExit(0)
 
     ok_line("Grading pipeline finished.")

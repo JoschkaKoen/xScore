@@ -9,29 +9,38 @@ from pathlib import Path
 def find_folder(
     instruction_hint: str | None = None,
     cli_override: str | None = None,
+    ai_folder_path: str | None = None,
     search_root: Path | None = None,
 ) -> Path:
     """Return the exam folder path.
 
     Priority:
     1. ``cli_override`` (--folder flag) — used as-is, must exist.
-    2. ``instruction_hint`` — exact directory name match in ``search_root``.
-    3. ``instruction_hint`` — fuzzy match against sub-directory names (≥ 0.6 ratio).
-    4. Heuristic fallback: newest directory containing "test" or "exam" (case-insensitive)
+    2. ``ai_folder_path`` — explicit path from parsed prompt (same rules as CLI).
+    3. ``instruction_hint`` — exact directory name match in ``search_root``.
+    4. ``instruction_hint`` — fuzzy match against sub-directory names (≥ 0.6 ratio).
+    5. Heuristic fallback: newest directory containing "test" or "exam" (case-insensitive)
        in ``search_root``.
 
     Raises ``FileNotFoundError`` if nothing is found.
     """
     root = search_root or Path.cwd()
 
-    # 1. Explicit CLI override
-    if cli_override:
-        p = Path(cli_override)
+    def _resolve_explicit(path_str: str, label: str) -> Path:
+        p = Path(path_str.strip())
         if not p.is_absolute():
             p = root / p
         if p.is_dir():
             return p.resolve()
-        raise FileNotFoundError(f"--folder path does not exist or is not a directory: {p}")
+        raise FileNotFoundError(f"{label} path does not exist or is not a directory: {p}")
+
+    # 1. Explicit CLI override
+    if cli_override:
+        return _resolve_explicit(cli_override, "--folder")
+
+    # 2. Explicit path from natural-language instruction (AI)
+    if ai_folder_path and str(ai_folder_path).strip():
+        return _resolve_explicit(str(ai_folder_path), "Prompt-specified folder")
 
     candidates = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]
 
