@@ -33,6 +33,38 @@ def _pct_color(pct: float) -> str:
 # Scaffold summary
 # ---------------------------------------------------------------------------
 
+_BULLET_ONLY_LINE = frozenset(
+    {
+        "•",
+        "·",
+        "▪",
+        "‣",
+        "-",
+        "*",
+        "○",
+    }
+)
+
+
+def _normalize_scaffold_answer_lines(text: str) -> str:
+    """Join mark-scheme lines where the bullet sits alone on a line before the item text."""
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        raw_line = lines[i]
+        stripped = raw_line.strip()
+        if stripped in _BULLET_ONLY_LINE and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt and nxt not in _BULLET_ONLY_LINE:
+                out.append(f"• {nxt}")
+                i += 2
+                continue
+        out.append(raw_line)
+        i += 1
+    return "\n".join(out)
+
+
 def print_scaffold_summary(scaffold: ExamScaffold) -> None:
     """Print gradable questions with wrapped model answers (multi-line safe)."""
     print()
@@ -67,6 +99,7 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         raw = (q.correct_answer or "").strip() or "–"
         raw = re.sub(r"\r\n?", "\n", raw)
         raw = re.sub(r"\n{3,}", "\n\n", raw)
+        raw = _normalize_scaffold_answer_lines(raw)
 
         wrapped_lines: list[str] = []
         for para in raw.split("\n"):
@@ -79,7 +112,7 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
                 p,
                 width=ans_width,
                 break_long_words=True,
-                break_on_hyphens=False,
+                break_on_hyphens=True,
             )
             wrapped_lines.extend(chunk if chunk else [""])
 
