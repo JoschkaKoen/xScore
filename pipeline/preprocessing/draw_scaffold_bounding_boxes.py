@@ -17,16 +17,18 @@ def write_reflines_debug_pdf(deskewed_pdf: Path, dpi: int) -> Path | None:
     the PDF for debugging.
     """
     deskewed_pdf = Path(deskewed_pdf)
-    sidecar = deskewed_pdf.with_name(deskewed_pdf.stem + "_reflines.json")
-    if not sidecar.is_file():
+    from pipeline.preprocessing.deskew import overlay_reflines_on_pdf, resolve_deskew_sidecar
+
+    sidecar = resolve_deskew_sidecar(deskewed_pdf)
+    if sidecar is None:
         from pipeline.shared.terminal_ui import info_line
 
-        info_line(f"No reflines sidecar ({sidecar.name}) — skip reflines overlay")
+        info_line(
+            "No anchor sidecar (*_anchors.json or legacy *_reflines.json) — skip reflines overlay"
+        )
         return None
     out = deskewed_pdf.with_name(deskewed_pdf.stem + "_reflines_overlay.pdf")
     try:
-        from pipeline.preprocessing.deskew import overlay_reflines_on_pdf
-
         overlay_reflines_on_pdf(deskewed_pdf, sidecar, out, dpi=dpi)
         return out
     except Exception as e:
@@ -50,6 +52,7 @@ def write_projected_scaffold_debug_pdf(
     *artifact_dir*: scaffold cache location (defaults to :func:`exam_artifact_dir` for the exam).
     Pass the same directory as ``grade.py`` / ``start_scan.cleanup_pdf`` so overlays match the current run.
     """
+    from pipeline.preprocessing.deskew import resolve_deskew_sidecar
     from pipeline.scaffold.project_boxes_on_scanned_exam import find_raw_four_up_pdf, overlay_projected_scaffold_on_scan_pdf
     from pipeline.shared.exam_paths import exam_artifact_dir
     from pipeline.scaffold.generate_scaffold import _find_exam_pdf, build_scaffold
@@ -93,9 +96,11 @@ def write_projected_scaffold_debug_pdf(
         warn_line(f"Could not load scaffold for projected overlay: {e}")
         return None
 
-    sidecar = deskewed_pdf.with_name(deskewed_pdf.stem + "_reflines.json")
-    if not sidecar.is_file():
-        (warn_line if verbose else info_line)("Missing reflines JSON — skip projected overlay")
+    sidecar = resolve_deskew_sidecar(deskewed_pdf)
+    if sidecar is None:
+        (warn_line if verbose else info_line)(
+            "Missing anchor sidecar (*_anchors.json or legacy *_reflines.json) — skip projected overlay"
+        )
         return None
 
     out = deskewed_pdf.with_name(deskewed_pdf.stem + "_projected_boxes.pdf")

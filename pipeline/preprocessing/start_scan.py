@@ -25,7 +25,7 @@ def cleanup_pdf(
     it is copied into *artifact_dir* once.
 
     Skips processing if the output already exists and is newer than the source,
-    unless *force_clean_scan* is true (output and matching reflines sidecar are removed first).
+    unless *force_clean_scan* is true (output and matching anchor sidecars are removed first).
 
     Pass 1: blank page removal (72 DPI)
     Pass 2: OSD 90-degree rotation (pikepdf lossless)
@@ -60,11 +60,20 @@ def cleanup_pdf(
 
     from pipeline.shared.terminal_ui import tool_line
 
-    sidecar = output.with_name(f"{output.stem}_reflines.json")
-    legacy_side = legacy_out.with_name(f"{legacy_out.stem}_reflines.json")
+    sidecar = output.with_name(f"{output.stem}_anchors.json")
+    sidecar_legacy_reflines = output.with_name(f"{output.stem}_reflines.json")
+    legacy_side = legacy_out.with_name(f"{legacy_out.stem}_anchors.json")
+    legacy_side_reflines = legacy_out.with_name(f"{legacy_out.stem}_reflines.json")
 
     if force_clean_scan:
-        for p in (output, sidecar, legacy_out, legacy_side):
+        for p in (
+            output,
+            sidecar,
+            sidecar_legacy_reflines,
+            legacy_out,
+            legacy_side,
+            legacy_side_reflines,
+        ):
             if p.exists():
                 p.unlink()
                 tool_line("start_scan", f"--force-clean-scan: removed {p.name}")
@@ -78,15 +87,18 @@ def cleanup_pdf(
         shutil.copy2(legacy_out, output)
         if legacy_side.is_file():
             shutil.copy2(legacy_side, sidecar)
+        elif legacy_side_reflines.is_file():
+            shutil.copy2(legacy_side_reflines, sidecar)
         try:
             legacy_out.unlink()
         except OSError:
             pass
-        if legacy_side.is_file():
-            try:
-                legacy_side.unlink()
-            except OSError:
-                pass
+        for leg in (legacy_side, legacy_side_reflines):
+            if leg.is_file():
+                try:
+                    leg.unlink()
+                except OSError:
+                    pass
         return output
 
     tool_line("start_scan", f"Cleaning {match.name} → {output.name} (DPI {dpi}) …")
@@ -105,7 +117,7 @@ def cleanup_pdf(
             input_pdf=output,
             output_pdf=tmp_deskew,
             dpi=dpi,
-            reflines_sidecar=output.with_name(f"{output.stem}_reflines.json"),
+            reflines_sidecar=output.with_name(f"{output.stem}_anchors.json"),
             verbose=False,
         )
         shutil.move(str(tmp_deskew), str(output))

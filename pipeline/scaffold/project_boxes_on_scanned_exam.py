@@ -18,7 +18,8 @@ Each sub-page header carries an "IGCSE Physics: sXX YY" label, whose center
 coordinates are:
 - Known exactly in 4-up PDF space (extracted from the raw vector PDF).
 - Detected on the deskewed scan via template matching (stored in the
-  ``_reflines.json`` sidecar produced by :func:`pipeline.preprocessing.deskew.deskew_pdf_raster`).
+  ``*_anchors.json`` sidecar from :func:`pipeline.preprocessing.deskew.deskew_pdf_raster`;
+  legacy ``*_reflines.json`` is still readable).
 
 These two pairs of corresponding points define a **similarity transform**
 (uniform scale + translation) per half-page.  Rotation is already handled by
@@ -51,7 +52,7 @@ Usage example
     )
 
     raw_anchors  = extract_raw_igcse_anchors(Path("raw exam 4up.pdf"))
-    scan_page    = reflines_data[0]   # one entry from _reflines.json
+    scan_page    = reflines_data[0]   # one entry from anchors / legacy reflines sidecar
     top_tf, bot_tf = compute_page_transforms(raw_anchors, scan_page["anchors"])
 
     # Project a Question.bbox (BBox dataclass from pipeline.shared.models)
@@ -262,7 +263,8 @@ def compute_page_transforms(
     Args:
         raw_anchors:  Output of :func:`extract_raw_igcse_anchors`.
         scan_anchors: The ``"anchors"`` sub-dict from one entry in the
-                      ``_reflines.json`` sidecar.  Values are dicts with
+                      anchor sidecar (``*_anchors.json`` or legacy ``*_reflines.json``).
+                      Values are dicts with
                       ``"x"``, ``"y"``, ``"score"`` keys (or ``None``).
 
     Returns:
@@ -462,7 +464,8 @@ def overlay_projected_scaffold_on_scan_pdf(
 
     Args:
         deskewed_pdf: Output of :func:`pipeline.preprocessing.deskew.deskew_pdf_raster`.
-        reflines_json: Matching ``*_reflines.json`` with ``anchors`` per page.
+        reflines_json: Anchor sidecar (``*_anchors.json`` or legacy ``*_reflines.json``)
+            with ``anchors`` per page.
         raw_4up_pdf: Raw exam PDF used to build the scaffold (4-up layout).
         questions: Root-level questions from :class:`pipeline.shared.models.ExamScaffold`.
         output_pdf: Destination path (must differ from *deskewed_pdf* unless you

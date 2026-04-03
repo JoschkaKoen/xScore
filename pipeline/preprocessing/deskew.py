@@ -4,12 +4,13 @@ Each A3 page contains two A4 exam sheets (top half / bottom half). The scanner
 introduces independent sub-degree skew in each half, so angle detection and
 correction are performed **per half** and the halves are reassembled.
 
-The sidecar ``<stem>_reflines.json`` (next to the output PDF by default, or set
+The sidecar ``<stem>_anchors.json`` (next to the output PDF by default, or set
 via ``reflines_sidecar``) stores **IGCSE header anchor** positions per page for
 projection onto scans.  Legacy ``top`` / ``bot`` vertical-refline arrays are
 written as empty lists; the detector :func:`detect_reference_lines` is kept in
-the module but not invoked in the pipeline.  *input_pdf* and *output_pdf* must
-differ — the source file is never overwritten in-place.
+the module but not invoked in the pipeline.  Older runs may still have
+``<stem>_reflines.json``; :func:`resolve_deskew_sidecar` finds either.  *input_pdf*
+and *output_pdf* must differ — the source file is never overwritten in-place.
 
 Empirical data from 34 pages of a Space Physics scan (300 DPI, 68 half-pages):
   Range -0.45 to +0.20 deg, median -0.30 deg, 91 % of halves |skew| > 0.1 deg.
@@ -449,6 +450,27 @@ def _lines_str(lines: list[ReferenceLine]) -> str:
     return "  ".join(parts) if parts else "(none)"
 
 
+def anchors_sidecar_path(deskewed_pdf: Path) -> Path:
+    """Path for the IGCSE anchor sidecar next to a deskewed raster PDF."""
+    p = Path(deskewed_pdf)
+    return p.with_name(p.stem + "_anchors.json")
+
+
+def resolve_deskew_sidecar(deskewed_pdf: Path) -> Path | None:
+    """Return an existing anchor sidecar path, or *None*.
+
+    Prefers ``<stem>_anchors.json``; falls back to legacy ``<stem>_reflines.json``.
+    """
+    p = Path(deskewed_pdf)
+    newer = anchors_sidecar_path(p)
+    if newer.is_file():
+        return newer
+    legacy = p.with_name(p.stem + "_reflines.json")
+    if legacy.is_file():
+        return legacy
+    return None
+
+
 def deskew_pdf_raster(
     input_pdf: Path,
     output_pdf: Path,
@@ -457,8 +479,8 @@ def deskew_pdf_raster(
     reflines_sidecar: Path | None = None,
     verbose: bool = True,
 ) -> Path:
-    """Rasterize *input_pdf*, deskew each page (per half), detect reference
-    lines, write *output_pdf* and a sidecar JSON file.
+    """Rasterize *input_pdf*, deskew each page (per half), detect IGCSE anchors,
+    write *output_pdf* and a sidecar JSON file (``*_anchors.json`` by default).
 
     **Input and output paths must differ** — raw or intermediate PDFs must never
     be overwritten in-place (the pipeline reads the whole file while building
@@ -469,10 +491,10 @@ def deskew_pdf_raster(
         input_pdf: Source PDF (already OSD-rotated by :func:`pipeline.preprocessing.remove_blanks_autorotate.process_pdf`).
         output_pdf: Destination PDF (must not resolve to the same path as *input_pdf*).
         dpi: Render/output DPI.
-        reflines_sidecar: Optional path for the ``*_reflines.json`` sidecar.
-            Defaults to ``output_pdf.with_name(output_pdf.stem + "_reflines.json")``.
-            Use this when *output_pdf* is a temp file but the sidecar should use
-            the final output stem (e.g. ``cleaned_scan_reflines.json``).
+        reflines_sidecar: Optional path for the anchor sidecar JSON (IGCSE anchors
+            per page).  Defaults to :func:`anchors_sidecar_path` applied to
+            *output_pdf*.  Use this when *output_pdf* is a temp file but the sidecar
+            should use the final stem (e.g. ``cleaned_scan_anchors.json``).
         verbose: When False (e.g. ``grade.py`` pipeline), print only summaries instead
             of per-page angle, line, and anchor lines.
 
@@ -573,7 +595,7 @@ def deskew_pdf_raster(
     sidecar_path = (
         Path(reflines_sidecar).resolve()
         if reflines_sidecar is not None
-        else output_pdf.with_name(output_pdf.stem + "_reflines.json").resolve()
+        else anchors_sidecar_path(output_pdf).resolve()
     )
     sidecar_path.write_text(json.dumps(reflines_data, indent=2))
 
@@ -587,7 +609,7 @@ def deskew_pdf_raster(
             f"IGCSE anchors · → {sidecar_path.name}"
         )
     else:
-        tool_line("deskew", f"Reference lines → {sidecar_path.name}")
+        tool_line("deskew", f"Anchors sidecar → {sidecar_path.name}")
 
     doc = fitz.open()
     for i in range(n):
