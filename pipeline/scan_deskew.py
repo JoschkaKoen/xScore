@@ -4,8 +4,9 @@ Each A3 page contains two A4 exam sheets (top half / bottom half). The scanner
 introduces independent sub-degree skew in each half, so angle detection and
 correction are performed **per half** and the halves are reassembled.
 
-Angle detection uses vertical-projection variance on a cheap downsampled proxy;
-the correction is applied once at full resolution with bicubic interpolation.
+Angle detection uses vertical-projection variance on the **full-resolution**
+grayscale half (no downsample); the correction uses the same angle with
+bicubic interpolation on that same resolution.
 
 Empirical data from 34 pages of a Space Physics scan (300 DPI, 68 half-pages):
   Range -0.45 to +0.20 deg, median -0.30 deg, 91 % of halves |skew| > 0.1 deg.
@@ -28,7 +29,6 @@ from PIL import Image
 # Constants
 # ---------------------------------------------------------------------------
 
-_PROXY_HEIGHT = 1000        # px — downsampled height for fast angle search
 _SWEEP_MIN = -3.0           # deg
 _SWEEP_MAX = 3.0            # deg
 _SWEEP_STEP = 0.05          # deg
@@ -42,6 +42,9 @@ _MIN_ABS_DEG = 0.05         # skip warp if detected angle is below this
 def get_deskew_angle(gray: np.ndarray) -> float:
     """Detect the skew angle of *gray* via vertical-projection variance.
 
+    Runs Otsu binarisation and the angle sweep at **native resolution** of *gray*
+    (no downsample), so each warp matches the pixels used for deskew_image.
+
     Args:
         gray: Grayscale uint8 numpy array (any size).
 
@@ -49,20 +52,17 @@ def get_deskew_angle(gray: np.ndarray) -> float:
         Best rotation angle in degrees (positive = CCW).
         The caller should rotate by *-angle* to straighten the image.
     """
-    h = gray.shape[0]
-    scale = _PROXY_HEIGHT / h
-    small = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    _, thresh = cv2.threshold(small, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
-    cx, cy = small.shape[1] // 2, small.shape[0] // 2
+    h, w = thresh.shape[:2]
+    cx, cy = w // 2, h // 2
     best_angle = 0.0
     best_var = -1.0
 
     for angle in np.arange(_SWEEP_MIN, _SWEEP_MAX + _SWEEP_STEP / 2, _SWEEP_STEP):
         M = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
         rotated = cv2.warpAffine(
-            thresh, M, (small.shape[1], small.shape[0]),
+            thresh, M, (w, h),
             flags=cv2.INTER_NEAREST,
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0,
@@ -157,6 +157,9 @@ def deskew_pdf_raster(
     output_pdf = Path(output_pdf)
 
     print(f"\n[deskew] Rendering {input_pdf.name} at {dpi} DPI …")
+    print(
+        "[deskew] Angle detection: full-resolution halves (no proxy downsample)"
+    )
     pages = convert_from_path(
         str(input_pdf),
         dpi=dpi,

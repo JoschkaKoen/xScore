@@ -60,7 +60,7 @@ python autograder.py scan.pdf cleaned.pdf --deskew   # also run fine deskew
 These A3-portrait scans contain two A4 exam sheets per page (top half and bottom half). The scanner introduces slightly different sub-degree skew in each half. The deskew pass:
 
 1. **Splits** each page at the vertical midpoint into top and bottom halves.
-2. **Detects** the rotation angle per half using vertical-projection variance on a cheap downsampled proxy — printed vertical ruling lines produce sharp column-sum peaks when aligned.
+2. **Detects** the rotation angle per half using vertical-projection variance on the full-resolution grayscale half — printed vertical ruling lines produce sharp column-sum peaks when aligned.
 3. **Applies** the correction once per half at full resolution (`INTER_CUBIC`, white fill).
 4. **Reassembles** the halves and embeds all pages into a rasterised output PDF.
 
