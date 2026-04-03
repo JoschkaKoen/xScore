@@ -12,6 +12,6 @@ After completing any code changes, always run a full git push without being aske
 3. `git commit -m "<concise message>"`
 4. `git push`
 
-**Never stage**: `.env`, `*.pdf`, `output/`, `debug/`, `Ground Truth*`, `*_eval.json`
+**Never stage**: `.env`, `*.pdf`, `output/`, `Ground Truth*`
 
 Skip if the only changes are gitignored files, or the user says not to.

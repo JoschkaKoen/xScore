@@ -34,7 +34,7 @@ Install system dependencies:
 |------|------|
 | Grade a full exam folder from a plain-English prompt (includes scan clean + deskew) | `grade.py` |
 
-The `extraction/` package (profiles, providers, eval) remains available for custom scripts or tooling you add locally.
+The `extraction/` package (profiles, providers, reporting) remains available for custom scripts or tooling you add locally.
 
 Scan rotation, blank-page removal, and fine deskew are implemented in `pipeline/scan_preprocess.py` and `pipeline/scan_deskew.py`, invoked automatically by `pipeline/pdf_cleanup.py` when you run `grade.py`.
 
@@ -166,7 +166,7 @@ All tunables live in `config.py`: AI model, DPI, crop fractions, API retry setti
 ```
 grade.py             Prompt-driven grading CLI
 config.py            Models, DPI, paths, and all tunables
-extraction/          Profiles, AI providers, eval, reporting (library)
+extraction/          Profiles, AI providers, reporting (library)
 pipeline/            Full grading pipeline modules (grade.py)
   scan_preprocess.py OSD rotation + blank-page removal (pikepdf)
   pdf_cleanup.py     Class scan clean + deskew orchestration

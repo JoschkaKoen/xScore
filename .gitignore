@@ -15,14 +15,8 @@ __pycache__/
 Space Physics Unit Test/
 output/
 
-# Debug crops folder
-debug/
-
 # Ground-truth / evaluation labels (local only; do not publish)
 Ground Truth*
-
-# Evaluation results folder
-eval/
 
 # Local agent / benchmark logs
 improvement_log.jsonl

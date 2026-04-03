@@ -18,7 +18,7 @@ from config import (
 
 
 def effective_crop_fraction() -> float:
-    """Optional override via ``EXTRACT_CROP_FRACTION`` (e.g. 0.55) for eval tuning."""
+    """Optional override via ``EXTRACT_CROP_FRACTION`` (e.g. 0.55) for crop tuning."""
     raw = os.getenv("EXTRACT_CROP_FRACTION", "").strip()
     if not raw:
         return CROP_TOP_FRACTION

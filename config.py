@@ -145,9 +145,6 @@ DEFAULT_PDF = "Space Physics Unit Test/scan 400dpi.pdf"
 # Ground truth file path (for accuracy evaluation; repo-relative)
 GROUND_TRUTH_PATH = Path(__file__).resolve().parent / "Ground Truth "
 
-# Enable saving debug images (cropped page images)
-SAVE_DEBUG_IMAGES = True
-
 # =============================================================================
 # Generic Pipeline Configuration (grade.py)
 # =============================================================================
