@@ -110,7 +110,6 @@ class KimiProvider:
         base_url = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
         
         print(f"[INFO] Connecting to Kimi API at: {base_url}")
-        print(f"[INFO] Using API key: {api_key[:15]}...")
         
         assert _OpenAIClient is not None
         return _OpenAIClient(api_key=api_key, base_url=base_url)

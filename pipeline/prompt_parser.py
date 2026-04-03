@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from typing import Any
 
@@ -158,7 +159,6 @@ def _heuristic_fallback(prompt: str, dpi_override: int | None) -> TaskInstructio
 
     student_filter = StudentFilter()
     if "first" in p:
-        import re
         m = re.search(r"first\s+(\d+)", p)
         if m:
             student_filter = StudentFilter(mode="first_n", n=int(m.group(1)))

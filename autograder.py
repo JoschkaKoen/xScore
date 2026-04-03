@@ -267,13 +267,18 @@ def main():
 
         out_p = Path(args.output)
         tmp_deskew = out_p.parent / f"{out_p.stem}_deskew_tmp{out_p.suffix}"
-        deskew_pdf_raster(
-            input_pdf=out_p,
-            output_pdf=tmp_deskew,
-            dpi=args.dpi,
-            reflines_sidecar=out_p.with_name(f"{out_p.stem}_reflines.json"),
-        )
-        shutil.move(str(tmp_deskew), str(out_p))
+        try:
+            deskew_pdf_raster(
+                input_pdf=out_p,
+                output_pdf=tmp_deskew,
+                dpi=args.dpi,
+                reflines_sidecar=out_p.with_name(f"{out_p.stem}_reflines.json"),
+            )
+            shutil.move(str(tmp_deskew), str(out_p))
+        except Exception:
+            if tmp_deskew.exists():
+                tmp_deskew.unlink()
+            raise
         from pipeline.scan_overlays import write_scan_debug_pdfs_after_deskew
 
         write_scan_debug_pdfs_after_deskew(out_p.parent, out_p, args.dpi)
