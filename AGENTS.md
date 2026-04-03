@@ -184,7 +184,7 @@ Processing pipeline:
 
 ### Output Naming
 
-`grade.py` writes pipeline artifacts for each exam under `output/<exam_stem>/`: `scaffolds/`, `scaffold_images/`, `overlays/` (vector scaffold-box PDFs), `trials/` (optional ad-hoc deskew experiments), `cleaned_scan.pdf` plus deskew sidecar and scan debug PDFs at the artifact root, and `runs/<timestamp>/` for LaTeX/PDF reports.
+`grade.py` writes pipeline artifacts for each **run** under `output/<exam_stem>/<run_id>/` (timestamp-based `run_id`, with a numeric suffix if the folder already exists). That folder holds `scaffolds/`, `scaffold_images/`, `overlays/`, `cleaned_scan.pdf`, deskew sidecar and scan debug PDFs, and the LaTeX/PDF grading report — nothing is reused from previous runs unless you point at an older `run_id` manually.
 
 Full-run extraction (`scripts/extract_answers.py`) writes under `output/extract_answers/<safe_pdf_stem>/`:
 - Input example: `Space Physics Unit Test/scan 400dpi.pdf`

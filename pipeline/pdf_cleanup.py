@@ -112,6 +112,8 @@ def cleanup_pdf(
         shutil.move(str(tmp_deskew), str(output))
         from pipeline.scan_overlays import write_scan_debug_pdfs_after_deskew
 
-        write_scan_debug_pdfs_after_deskew(folder, output, dpi, verbose=False)
+        write_scan_debug_pdfs_after_deskew(
+            folder, output, dpi, verbose=False, artifact_dir=ad,
+        )
 
     return output

@@ -39,8 +39,13 @@ def write_projected_scaffold_debug_pdf(
     *,
     force_layout_mismatch: bool = False,
     verbose: bool = True,
+    artifact_dir: Path | None = None,
 ) -> Path | None:
-    """Project scaffold bboxes onto *deskewed_pdf* using 4-up anchors + reflines JSON."""
+    """Project scaffold bboxes onto *deskewed_pdf* using 4-up anchors + reflines JSON.
+
+    *artifact_dir*: scaffold cache location (defaults to :func:`exam_artifact_dir` for the exam).
+    Pass the same directory as ``grade.py`` / ``cleanup_pdf`` so overlays match the current run.
+    """
     from pipeline.bbox_projection import find_raw_four_up_pdf, overlay_projected_scaffold_on_scan_pdf
     from pipeline.exam_paths import exam_artifact_dir
     from pipeline.scaffold import _find_exam_pdf, build_scaffold
@@ -72,10 +77,11 @@ def write_projected_scaffold_debug_pdf(
         (warn_line if verbose else info_line)(f"[scan_overlays] {msg}")
         return None
 
+    ad = artifact_dir if artifact_dir is not None else exam_artifact_dir(folder)
     try:
         scaffold = build_scaffold(
             folder,
-            artifact_dir=exam_artifact_dir(folder),
+            artifact_dir=ad,
             quiet=not verbose,
         )
         roots = scaffold.questions
@@ -116,6 +122,7 @@ def write_scan_debug_pdfs_after_deskew(
     write_reflines: bool = False,
     write_projected: bool = True,
     verbose: bool = False,
+    artifact_dir: Path | None = None,
 ) -> None:
     """After a successful deskew, write optional debug PDFs next to *deskewed_pdf*."""
     if write_reflines:
@@ -127,4 +134,5 @@ def write_scan_debug_pdfs_after_deskew(
             dpi,
             force_layout_mismatch=force_projected_mismatch,
             verbose=verbose,
+            artifact_dir=artifact_dir,
         )

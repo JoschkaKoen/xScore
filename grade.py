@@ -15,12 +15,12 @@ The program will:
   2. Locate the exam folder.
   3. Read the student roster from StudentList.xlsx.
   4. Build an exam scaffold by parsing vector exam + answer-key PDFs (PyMuPDF).
-  5. Clean the scan PDF (auto-rotate + blank removal + deskew); writes under output/<exam_stem>/.
+  5. Clean the scan PDF (auto-rotate + blank removal + deskew); writes under output/<exam_stem>/<run_id>/.
   6. Identify which pages belong to which student.
   7. Detect which exercises each student attempted.
   8. Grade and print a full results table.
   9. Evaluate against ground truth (if a ground_truth.txt file exists in the folder).
- 10. Generate a LaTeX/PDF report in the output directory.
+ 10. Generate a LaTeX/PDF report in the same run directory.
 """
 
 from __future__ import annotations
@@ -246,12 +246,18 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     note_line(f"{folder}")
 
     stem = folder.name.replace(" ", "_")
-    artifact_dir = Path("output") / stem
+    exam_output_root = Path("output") / stem
+    exam_output_root.mkdir(parents=True, exist_ok=True)
+    artifact_dir = exam_output_root / timestamp
+    suffix = 1
+    while artifact_dir.exists():
+        suffix += 1
+        artifact_dir = exam_output_root / f"{timestamp}_{suffix}"
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    run_dir = artifact_dir / "runs" / timestamp
-    run_dir.mkdir(parents=True, exist_ok=True)
-    note_line(f"Exam artifacts: {artifact_dir}")
-    note_line(f"Run report directory: {run_dir}")
+    # Reports and all derived files for this invocation live in the same run folder.
+    run_dir = artifact_dir
+    note_line(f"Exam output root: {exam_output_root}")
+    note_line(f"This run (all artifacts): {artifact_dir}")
     if through_step == 2:
         info_line("through_step 2: stopping after find exam folder (README table).")
         raise SystemExit(0)
