@@ -26,6 +26,7 @@ from pathlib import Path
 import cv2
 import fitz  # PyMuPDF
 import numpy as np
+import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
 
@@ -46,6 +47,15 @@ _MERGE_X_TOL = 10           # px — x-distance within which segments are merged
 _ENDPOINT_STRIP_HALF = 4    # px — half-width of column strip used for endpoint scan
 _ENDPOINT_MIN_RUN = 8       # px — minimum consecutive ink rows to count as a real endpoint
 
+# IGCSE anchor detection
+_ANCHOR_SEARCH_HEIGHT = 350  # px — rows from top of each half-page to search
+_ANCHOR_MIN_SCORE = 0.5      # TM_CCOEFF_NORMED threshold for accepting a match
+_ANCHOR_TEMPLATE_PADDING = 8 # px — padding around OCR bbox when cropping template
+
+# Overlay colours / sizes
+_OVERLAY_ANCHOR_COLOR: tuple[float, float, float] = (1.0, 0.55, 0.0)  # orange
+_OVERLAY_CROSSHAIR_SIZE_PT = 8.0  # pt — arm length of anchor crosshair markers
+
 
 # ---------------------------------------------------------------------------
 # Reference-line dataclass
@@ -64,6 +74,21 @@ class ReferenceLine:
 
     def __str__(self) -> str:
         return f"x={self.x_center}  y={self.y_start}..{self.y_end}  h={self.y_end - self.y_start}"
+
+
+@dataclass
+class AnchorPoint:
+    """Detected position of one IGCSE header label on a deskewed sub-page.
+
+    Coordinates are in pixels relative to the top-left of the **half-page**
+    image (i.e. y=0 is the top of that half, not the top of the full A3 page).
+    """
+    x: int          # center x of matched template in half-page pixel coords
+    y: int          # center y of matched template in half-page pixel coords
+    score: float    # template match confidence (TM_CCOEFF_NORMED, 0..1)
+
+    def __str__(self) -> str:
+        return f"({self.x},{self.y}) s={self.score:.2f}"
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +263,129 @@ def detect_reference_lines(half_gray: np.ndarray) -> list[ReferenceLine]:
 
 
 # ---------------------------------------------------------------------------
+# IGCSE anchor detection
+# ---------------------------------------------------------------------------
+
+def extract_igcse_template(
+    top_half_gray: np.ndarray,
+    search_height: int = _ANCHOR_SEARCH_HEIGHT,
+    padding: int = _ANCHOR_TEMPLATE_PADDING,
+) -> np.ndarray:
+    """Bootstrap the IGCSE label template from the left sub-page of *top_half_gray*.
+
+    Runs Tesseract OCR on the top-left search strip of the **first** page's top
+    half to find the word "IGCSE", then returns that region (with padding) as
+    the template used for fast ``cv2.matchTemplate`` on all subsequent pages.
+
+    Args:
+        top_half_gray: Grayscale uint8 array for the top half of scan page 1.
+        search_height: Number of rows to search from the top of the half.
+        padding: Pixels to add around the detected OCR bounding box.
+
+    Returns:
+        Cropped grayscale template as a uint8 numpy array.
+
+    Raises:
+        RuntimeError: If "IGCSE" cannot be found in the expected region.
+    """
+    hh, hw = top_half_gray.shape[:2]
+    mid_x = hw // 2
+    # Search only the left sub-page header strip
+    strip = top_half_gray[:min(search_height, hh), :mid_x]
+
+    data = pytesseract.image_to_data(
+        Image.fromarray(strip),
+        output_type=pytesseract.Output.DICT,
+    )
+
+    best_conf = -1
+    best_bbox: tuple[int, int, int, int] | None = None
+    for i, text in enumerate(data["text"]):
+        if "IGCSE" in text.upper():
+            conf = int(data["conf"][i])
+            if conf > best_conf:
+                best_conf = conf
+                best_bbox = (
+                    int(data["left"][i]),
+                    int(data["top"][i]),
+                    int(data["left"][i]) + int(data["width"][i]),
+                    int(data["top"][i]) + int(data["height"][i]),
+                )
+
+    if best_bbox is None:
+        raise RuntimeError(
+            "[deskew] Could not locate 'IGCSE' in the top-left header region of page 1. "
+            "Ensure the scan is correctly oriented and the header is not obscured."
+        )
+
+    x0 = max(0, best_bbox[0] - padding)
+    y0 = max(0, best_bbox[1] - padding)
+    x1 = min(strip.shape[1], best_bbox[2] + padding)
+    y1 = min(strip.shape[0], best_bbox[3] + padding)
+
+    template = strip[y0:y1, x0:x1].copy()
+    print(
+        f"[deskew] IGCSE template: {template.shape[1]}x{template.shape[0]}px "
+        f"at bbox=({x0},{y0},{x1},{y1})  OCR conf={best_conf}"
+    )
+    return template
+
+
+def detect_igcse_anchors(
+    half_gray: np.ndarray,
+    template: np.ndarray,
+    search_height: int = _ANCHOR_SEARCH_HEIGHT,
+    min_score: float = _ANCHOR_MIN_SCORE,
+) -> tuple[AnchorPoint | None, AnchorPoint | None]:
+    """Locate the IGCSE header label on the left and right sub-pages of *half_gray*.
+
+    Uses ``cv2.matchTemplate`` with ``TM_CCOEFF_NORMED`` inside a restricted
+    search region — the top *search_height* rows of each left/right half —
+    to avoid false positives from scattered "IGCSE" labels further down the page.
+
+    All returned coordinates are in **half-page pixel space** (y=0 is the top of
+    this half, not the top of the full A3 page).
+
+    Args:
+        half_gray: Grayscale uint8 array for one A4 half (top or bottom).
+        template: Template cropped by ``extract_igcse_template``.
+        search_height: Rows from the top of the half-page to restrict search.
+        min_score: Minimum ``TM_CCOEFF_NORMED`` score; matches below this are
+            discarded and ``None`` is returned for that side.
+
+    Returns:
+        ``(left_anchor, right_anchor)`` — either may be ``None`` if no confident
+        match is found.
+    """
+    hh, hw = half_gray.shape[:2]
+    mid_x = hw // 2
+    th, tw = template.shape[:2]
+    search_h = min(search_height, hh)
+
+    def _match_in(region: np.ndarray, x_offset: int) -> AnchorPoint | None:
+        if region.shape[0] < th or region.shape[1] < tw:
+            return None
+        result = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        if max_val < min_score:
+            return None
+        # max_loc is the top-left corner of the best-matching patch; anchor = center
+        ax = x_offset + max_loc[0] + tw // 2
+        ay = max_loc[1] + th // 2
+        return AnchorPoint(x=int(ax), y=int(ay), score=round(float(max_val), 3))
+
+    left_anchor  = _match_in(half_gray[:search_h, :mid_x],  x_offset=0)
+    right_anchor = _match_in(half_gray[:search_h, mid_x:],  x_offset=mid_x)
+
+    if left_anchor is None:
+        print("[deskew] WARNING: IGCSE anchor not found in left sub-page header")
+    if right_anchor is None:
+        print("[deskew] WARNING: IGCSE anchor not found in right sub-page header")
+
+    return left_anchor, right_anchor
+
+
+# ---------------------------------------------------------------------------
 # Per-page half-split pipeline
 # ---------------------------------------------------------------------------
 
@@ -343,14 +491,44 @@ def deskew_pdf_raster(
             print(f"[deskew]     top lines: {_lines_str(top_lines)}")
             print(f"[deskew]     bot lines: {_lines_str(bot_lines)}")
 
+    # Bootstrap IGCSE template from page 0 top half (Tesseract, runs once)
+    print("[deskew] Extracting IGCSE template from page 1 …")
+    page0_gray = np.array(results[0][0].convert("L"))
+    p0_mid = page0_gray.shape[0] // 2
+    igcse_template = extract_igcse_template(page0_gray[:p0_mid, :])
+
+    # Detect IGCSE anchors on all pages (fast template matching, serial)
+    print("[deskew] Detecting IGCSE anchors …")
+    page_anchors: dict[int, dict[str, AnchorPoint | None]] = {}
+    for i in range(n):
+        page_gray = np.array(results[i][0].convert("L"))
+        p_mid = page_gray.shape[0] // 2
+        tl, tr = detect_igcse_anchors(page_gray[:p_mid, :], igcse_template)
+        bl, br = detect_igcse_anchors(page_gray[p_mid:, :], igcse_template)
+        page_anchors[i] = {"top_left": tl, "top_right": tr, "bot_left": bl, "bot_right": br}
+        print(
+            f"[deskew]   page {i + 1:>3} anchors:"
+            f"  TL={tl}  TR={tr}  BL={bl}  BR={br}"
+        )
+
     # Build sidecar JSON (ordered by page index)
+    def _anc_dict(a: AnchorPoint | None) -> dict | None:
+        return asdict(a) if a is not None else None
+
     reflines_data: list[dict] = []
     for i in range(n):
         _, _, _, top_lines, bot_lines = results[i]
+        anc = page_anchors[i]
         reflines_data.append({
             "page": i + 1,
             "top": [asdict(ln) for ln in top_lines],
             "bot": [asdict(ln) for ln in bot_lines],
+            "anchors": {
+                "top_left":  _anc_dict(anc["top_left"]),
+                "top_right": _anc_dict(anc["top_right"]),
+                "bot_left":  _anc_dict(anc["bot_left"]),
+                "bot_right": _anc_dict(anc["bot_right"]),
+            },
         })
 
     sidecar_path = output_pdf.with_name(output_pdf.stem + "_reflines.json")
@@ -455,6 +633,31 @@ def overlay_reflines_on_pdf(
                     color=line_rgb,
                     width=line_width_pt,
                     lineCap=1,
+                )
+
+            # Draw crosshair markers at each IGCSE anchor position
+            anchors = entry.get("anchors", {})
+            for key, half_offset_px in [
+                ("top_left", 0), ("top_right", 0),
+                ("bot_left", mid), ("bot_right", mid),
+            ]:
+                anc = anchors.get(key)
+                if anc is None:
+                    continue
+                ax_pt = int(anc["x"]) * px_to_pt
+                ay_pt = (half_offset_px + int(anc["y"])) * px_to_pt
+                arm = _OVERLAY_CROSSHAIR_SIZE_PT
+                page.draw_line(
+                    fitz.Point(ax_pt - arm, ay_pt),
+                    fitz.Point(ax_pt + arm, ay_pt),
+                    color=_OVERLAY_ANCHOR_COLOR,
+                    width=0.5,
+                )
+                page.draw_line(
+                    fitz.Point(ax_pt, ay_pt - arm),
+                    fitz.Point(ax_pt, ay_pt + arm),
+                    color=_OVERLAY_ANCHOR_COLOR,
+                    width=0.5,
                 )
 
         doc.save(str(output_pdf), deflate=True)
