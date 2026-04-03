@@ -120,6 +120,33 @@ class SimilarityTransform:
 
 
 # ---------------------------------------------------------------------------
+# Locate the vector 4-up exam PDF (IGCSE anchor geometry)
+# ---------------------------------------------------------------------------
+
+def find_raw_four_up_pdf(folder: Path) -> Path | None:
+    """Return a raw exam PDF in *folder* whose name suggests a 4-up imposition.
+
+    Projection uses :func:`extract_raw_igcse_anchors`, which expects one page with
+    four quadrant headers. Skips answer keys and scans.
+    """
+    folder = Path(folder)
+    exact = folder / "raw exam 4up.pdf"
+    if exact.is_file():
+        return exact
+    cands = sorted(
+        (
+            p
+            for p in folder.glob("*.pdf")
+            if "4up" in p.name.lower()
+            and "answer" not in p.name.lower()
+            and "scan" not in p.name.lower()
+        ),
+        key=lambda p: p.name.lower(),
+    )
+    return cands[0] if cands else None
+
+
+# ---------------------------------------------------------------------------
 # Extract reference anchors from the raw 4-up PDF
 # ---------------------------------------------------------------------------
 

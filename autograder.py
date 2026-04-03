@@ -261,6 +261,9 @@ def main():
             reflines_sidecar=out_p.with_name(f"{out_p.stem}_reflines.json"),
         )
         shutil.move(str(tmp_deskew), str(out_p))
+        from pipeline.scan_overlays import write_scan_debug_pdfs_after_deskew
+
+        write_scan_debug_pdfs_after_deskew(out_p.parent, out_p, args.dpi)
 
 
 if __name__ == "__main__":

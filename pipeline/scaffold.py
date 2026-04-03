@@ -45,7 +45,13 @@ def _find_exam_pdf(folder: Path) -> Path:
     ]
     if not pdfs:
         raise FileNotFoundError(f"No raw exam PDF found in {folder}")
-    return pdfs[0]
+    # Prefer 4-up imposition when present so bbox coordinates match
+    # :func:`pipeline.bbox_projection.extract_raw_igcse_anchors` (scan projection).
+    ordered = sorted(pdfs, key=lambda p: p.name.lower())
+    four_up = [p for p in ordered if "4up" in p.name.lower()]
+    if four_up:
+        return four_up[0]
+    return ordered[0]
 
 
 def _find_answer_pdf(folder: Path) -> Path | None:

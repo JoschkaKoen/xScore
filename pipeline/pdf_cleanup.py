@@ -61,5 +61,8 @@ def cleanup_pdf(folder: Path, dpi: int = 300, deskew: bool = True) -> Path:
             reflines_sidecar=output.with_name(f"{output.stem}_reflines.json"),
         )
         shutil.move(str(tmp_deskew), str(output))
+        from pipeline.scan_overlays import write_scan_debug_pdfs_after_deskew
+
+        write_scan_debug_pdfs_after_deskew(folder, output, dpi)
 
     return output
