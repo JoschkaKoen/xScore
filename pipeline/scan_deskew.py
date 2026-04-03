@@ -31,7 +31,7 @@ from PIL import Image
 
 _SWEEP_MIN = -3.0           # deg
 _SWEEP_MAX = 3.0            # deg
-_SWEEP_STEP = 0.05          # deg
+_SWEEP_STEP = 0.01          # deg
 _MIN_ABS_DEG = 0.05         # skip warp if detected angle is below this
 
 
