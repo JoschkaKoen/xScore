@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
+import shutil
 import statistics
+import textwrap
 
 from extraction.reporting import Colors
 
@@ -31,6 +34,7 @@ def _pct_color(pct: float) -> str:
 # ---------------------------------------------------------------------------
 
 def print_scaffold_summary(scaffold: ExamScaffold) -> None:
+    """Print gradable questions with wrapped model answers (multi-line safe)."""
     print()
     print(rule("═"))
     leaves = scaffold.gradable_questions
@@ -43,12 +47,55 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         )
     )
     print(rule("═"))
-    col_w = (55 - 10 - 20 - 8) // 2
-    print(f"  {'#':<6} {'Type':<20} {'Marks':>5}  {'Answer':<15}")
-    print(f"  {_bar(56)}")
+    # Fixed-width meta columns; answer text wraps in remaining terminal width.
+    w_q, w_ty, w_m = 10, 24, 5
+    meta_len = 2 + w_q + w_ty + w_m + 2
+    term_w = max(64, shutil.get_terminal_size((96, 20)).columns)
+    ans_width = max(32, term_w - meta_len)
+
+    print(
+        f"  {'Question':<{w_q}}{'Type':<{w_ty}}{'Marks':>{w_m}}  "
+        "Model answer (wrapped to terminal width)"
+    )
+    print(f"  {_bar(min(term_w - 4, 92))}")
+
+    def _type_cell(qt: str) -> str:
+        label = qt.replace("_", " ")
+        return label if len(label) <= w_ty else label[: w_ty - 1] + "…"
+
     for q in leaves:
-        ans = q.correct_answer or "–"
-        print(f"  Q{q.number:<5} {q.question_type:<20} {q.marks:>5}  {ans:<15}")
+        raw = (q.correct_answer or "").strip() or "–"
+        raw = re.sub(r"\r\n?", "\n", raw)
+        raw = re.sub(r"\n{3,}", "\n\n", raw)
+
+        wrapped_lines: list[str] = []
+        for para in raw.split("\n"):
+            p = para.strip()
+            if not p:
+                if wrapped_lines and wrapped_lines[-1] != "":
+                    wrapped_lines.append("")
+                continue
+            chunk = textwrap.wrap(
+                p,
+                width=ans_width,
+                break_long_words=True,
+                break_on_hyphens=False,
+            )
+            wrapped_lines.extend(chunk if chunk else [""])
+
+        if not wrapped_lines:
+            wrapped_lines = ["–"]
+
+        q_label = f"Q{q.number}"
+        first_meta = f"  {q_label:<{w_q}}{_type_cell(q.question_type):<{w_ty}}{q.marks:>{w_m}}  "
+        indent = " " * len(first_meta)
+
+        for i, line in enumerate(wrapped_lines):
+            if i == 0:
+                print(first_meta + line)
+            else:
+                print(indent + line)
+
     print(rule("═"))
     print()
 
