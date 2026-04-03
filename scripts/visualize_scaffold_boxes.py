@@ -2,7 +2,7 @@
 """Draw red rectangles for scaffold bounding boxes on a copy of the vector exam PDF.
 
 Loads scaffold cache from ``output/<stem>/scaffolds/`` (or legacy paths under the exam
-folder). Default overlay PDF: ``output/<stem>/<exam_stem>_scaffold_boxes.pdf``.
+folder). Default overlay PDF: ``output/<stem>/overlays/<exam_stem>_scaffold_boxes.pdf``.
 """
 
 from __future__ import annotations
@@ -16,7 +16,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from pipeline.exam_paths import exam_artifact_dir, find_scaffold_cache_file
+from pipeline.exam_paths import (
+    artifact_overlays_dir,
+    exam_artifact_dir,
+    find_scaffold_cache_file,
+    safe_path_stem,
+)
 from pipeline.scaffold import _find_exam_pdf, question_from_dict
 from pipeline.scaffold_overlay import write_scaffold_boxes_pdf
 
@@ -35,7 +40,7 @@ def main() -> None:
         "--output",
         type=Path,
         default=None,
-        help="Output PDF path (default: output/<stem>/<exam_pdf_stem>_scaffold_boxes.pdf)",
+        help="Output PDF path (default: output/<stem>/overlays/..._scaffold_boxes.pdf)",
     )
     args = ap.parse_args()
     folder = args.folder.resolve()
@@ -53,7 +58,9 @@ def main() -> None:
         data = json.load(f)
     roots = [question_from_dict(q) for q in data["questions"]]
 
-    default_out = exam_artifact_dir(folder) / f"{exam_pdf.stem}_scaffold_boxes.pdf"
+    default_out = artifact_overlays_dir(exam_artifact_dir(folder)) / (
+        f"{safe_path_stem(exam_pdf.stem)}_scaffold_boxes.pdf"
+    )
     out_pdf, n_rects, n_pages = write_scaffold_boxes_pdf(
         exam_pdf, roots, args.output if args.output is not None else default_out
     )

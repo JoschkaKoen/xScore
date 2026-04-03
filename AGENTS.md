@@ -182,11 +182,11 @@ Processing pipeline:
 
 ### Output Naming
 
-`grade.py` writes pipeline artifacts for each exam under `output/<exam_stem>/` (scaffold cache, `scaffold_images/`, `cleaned_scan.pdf`, deskew sidecar and debug overlays). PDF/LaTeX reports for each run go under `output/<exam_stem>/runs/<timestamp>/`.
+`grade.py` writes pipeline artifacts for each exam under `output/<exam_stem>/`: `scaffolds/`, `scaffold_images/`, `overlays/` (vector scaffold-box PDFs), `trials/` (optional ad-hoc deskew experiments), `cleaned_scan.pdf` plus deskew sidecar and scan debug PDFs at the artifact root, and `runs/<timestamp>/` for LaTeX/PDF reports.
 
-Full-run extraction outputs use the input PDF stem under `output/`:
-- Input example: `Space Physics Unit Test/scan 400dpi.pdf` (or a cleaned PDF under `output/`)
-- JSON / TeX / PDF: `output/{stem}_answers.{json,tex,pdf}` (e.g. `scan 400dpi_answers.json`)
+Full-run extraction (`scripts/extract_answers.py`) writes under `output/extract_answers/<safe_pdf_stem>/`:
+- Input example: `Space Physics Unit Test/scan 400dpi.pdf`
+- JSON / TeX / PDF: `output/extract_answers/scan_400dpi/scan 400dpi_answers.{json,tex,pdf}` (original stem preserved in filenames)
 - Debug crops: `debug/debug_crops_{stem}/`
 - Eval (`--first-students N`): `{stem}_firstN_eval.json` in the project root
 

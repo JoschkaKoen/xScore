@@ -83,7 +83,7 @@ python scripts/extract_answers.py --first-students 12  # eval first 12 pages vs 
 python scripts/extract_answers.py --skip               # resume from existing JSON
 ```
 
-Output is written to `output/`. Evaluation mode also prints colour-coded accuracy.
+Full-run output is written under `output/extract_answers/<pdf_stem_sanitized>/` (JSON, TeX, PDF). Evaluation mode also prints colour-coded accuracy.
 
 ---
 

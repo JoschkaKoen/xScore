@@ -5,6 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def safe_path_stem(stem: str) -> str:
+    """Stable directory / filename fragment from a PDF stem (no spaces or slashes)."""
+    return stem.replace(" ", "_").replace("/", "_")
+
+
 def exam_artifact_dir(exam_folder: Path, output_base: str | Path = "output") -> Path:
     """Directory for cleaned scans, scaffold cache, images, and debug PDFs.
 
@@ -17,6 +22,18 @@ def exam_artifact_dir(exam_folder: Path, output_base: str | Path = "output") -> 
 
 def artifact_scaffold_cache_path(artifact_dir: Path) -> Path:
     return artifact_dir / "scaffolds" / "scaffold_cache.json"
+
+
+def artifact_overlays_dir(artifact_dir: Path) -> Path:
+    """Vector-exam scaffold box PDFs and similar overlays."""
+    return artifact_dir / "overlays"
+
+
+def extract_answers_output_dir(
+    pdf_stem: str, output_base: str | Path = "output"
+) -> Path:
+    """Directory for one ``extract_answers`` run: ``output/extract_answers/<safe_stem>/``."""
+    return Path(output_base) / "extract_answers" / safe_path_stem(pdf_stem)
 
 
 def find_scaffold_cache_file(

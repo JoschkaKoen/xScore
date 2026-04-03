@@ -7,6 +7,8 @@ exam PDFs using the configured vision model. See ``extraction/`` for modules.
 
     python scripts/extract_answers.py
     python scripts/extract_answers.py "Space Physics Unit Test/scan 300dpi.pdf"
+
+Writes JSON/TeX/PDF under ``output/extract_answers/<pdf_stem_sanitized>/``.
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 from dotenv import load_dotenv
 from pdf2image import convert_from_path
+
+from pipeline.exam_paths import extract_answers_output_dir
 
 from config import (
     AI_MODEL,
@@ -134,7 +138,7 @@ def main() -> None:
         raise SystemExit(1)
 
     stem = pdf_path.stem
-    output_dir = Path("output")
+    output_dir = extract_answers_output_dir(stem)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_json = output_dir / f"{stem}_answers.json"
     output_tex = output_dir / f"{stem}_answers.tex"
