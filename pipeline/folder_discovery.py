@@ -44,14 +44,14 @@ def find_folder(
 
     candidates = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]
 
-    # 2. Exact name match on hint
+    # 3. Exact name match on hint
     if instruction_hint:
         hint_lower = instruction_hint.strip().lower()
         for d in candidates:
             if d.name.lower() == hint_lower:
                 return d.resolve()
 
-    # 3. Fuzzy match on hint
+    # 4. Fuzzy match on hint
     if instruction_hint:
         hint_lower = instruction_hint.strip().lower()
         best: tuple[float, Path | None] = (0.0, None)
@@ -65,7 +65,7 @@ def find_folder(
         if best[0] >= 0.6 and best[1] is not None:
             return best[1].resolve()
 
-    # 4. Heuristic: newest dir whose name contains "test" or "exam"
+    # 5. Heuristic: newest dir whose name contains "test" or "exam"
     exam_dirs = sorted(
         [d for d in candidates if any(kw in d.name.lower() for kw in ("test", "exam"))],
         key=lambda d: d.stat().st_mtime,

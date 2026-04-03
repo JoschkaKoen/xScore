@@ -64,7 +64,8 @@ def _call_kimi(client: Any, image_b64: str, prompt: str) -> str:
             )
             return resp.choices[0].message.content or ""
         except Exception as exc:
-            print(f"  [answer_detection] API error (attempt {attempt}/3): {exc}")
+            from pipeline.terminal_ui import warn_line
+            warn_line(f"[answer_detection] API error (attempt {attempt}/3): {exc}")
             if attempt < 3:
                 time.sleep(2 ** attempt)
     return ""
@@ -92,7 +93,8 @@ def detect_answered_exercises(
     question_numbers = [q.number for q in scaffold.gradable_questions]
     prompt = _build_prompt(question_numbers)
 
-    print(f"[answer_detection] Rendering {cleaned_pdf.name} at {dpi} DPI …")
+    from pipeline.terminal_ui import tool_line
+    tool_line("answer_detection", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
     all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
 
     result: dict[str, list[str]] = {}

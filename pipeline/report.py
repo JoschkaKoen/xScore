@@ -282,11 +282,13 @@ def generate_report(
     Returns ``True`` on success, ``False`` if xelatex fails (the .tex is
     still written for manual inspection).
     """
+    from pipeline.terminal_ui import err_line, ok_line, tool_line
+
     output_tex.parent.mkdir(parents=True, exist_ok=True)
 
     doc = _full_document(title, scaffold, results, eval_data)
     output_tex.write_text(doc, encoding="utf-8")
-    print(f"\n[report] LaTeX written → {output_tex}")
+    tool_line("report", f"LaTeX written → {output_tex}")
 
     # xelatex must be run in the output dir so aux files land there
     result = subprocess.run(
@@ -303,9 +305,9 @@ def generate_report(
             aux.unlink()
 
     if result.returncode != 0:
-        print(f"[report] xelatex failed (exit {result.returncode}).")
-        print(result.stdout[-800:] if result.stdout else "(no output)")
+        err_line(f"xelatex failed (exit {result.returncode}).")
+        tool_line("report", result.stdout[-800:] if result.stdout else "(no output)")
         return False
 
-    print(f"[report] PDF report → {output_pdf}")
+    ok_line(f"PDF report → {output_pdf}")
     return True

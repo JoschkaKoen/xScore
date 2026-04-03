@@ -57,7 +57,8 @@ def _kimi_call(client: Any, image_b64: str, prompt: str, max_tokens: int = 128) 
             )
             return resp.choices[0].message.content or ""
         except Exception as exc:
-            print(f"    [grading] API error (attempt {attempt}/3): {exc}")
+            from pipeline.terminal_ui import warn_line
+            warn_line(f"[grading] API error (attempt {attempt}/3): {exc}")
             if attempt < 3:
                 time.sleep(2 ** attempt)
     return ""
@@ -218,7 +219,8 @@ def grade_students(
     task = instruction.task_type
     assignments = _filter_students(page_map, instruction)
 
-    print(f"[grading] Rendering {cleaned_pdf.name} at {dpi} DPI …")
+    from pipeline.terminal_ui import info_line, tool_line
+    tool_line("grading", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
     all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
 
     leaves = scaffold.gradable_questions
@@ -237,7 +239,7 @@ def grade_students(
         answers: dict[str, str] = {}
         marks_per_q: dict[str, float] = {}
 
-        print(f"\n  Grading {name} ({len(student_pages)} page(s), mode={task}) …")
+        info_line(f"Grading {name} ({len(student_pages)} page(s), mode={task}) …")
 
         if task == "count_marks":
             for page in student_pages:
@@ -261,7 +263,7 @@ def grade_students(
 
                 answers[q.number] = ans
                 marks_per_q[q.number] = marks
-                print(f"    Q{q.number}: {ans}  →  {marks}/{q.marks}")
+                info_line(f"Q{q.number}: {ans}  →  {marks}/{q.marks}")
                 time.sleep(0.15)
 
         total = sum(marks_per_q.values())

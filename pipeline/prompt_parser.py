@@ -156,14 +156,29 @@ def parse_prompt(
             print("[prompt_parser] Could not parse AI response — using heuristic parse.")
             return instruction
 
-    sf_raw = data.get("student_filter", {})
+    sf_raw = data.get("student_filter") or {}
+    if not isinstance(sf_raw, dict):
+        sf_raw = {}
+    raw_names = sf_raw.get("names")
+    if not isinstance(raw_names, list):
+        raw_names = []
+    raw_n = sf_raw.get("n")
+    try:
+        n_students = int(raw_n) if raw_n is not None and raw_n != "" else 0
+    except (TypeError, ValueError):
+        n_students = 0
     student_filter = StudentFilter(
-        mode=sf_raw.get("mode", "all"),
-        names=sf_raw.get("names", []),
-        n=int(sf_raw.get("n", 0)),
+        mode=str(sf_raw.get("mode") or "all"),
+        names=[str(x) for x in raw_names if x is not None],
+        n=n_students,
     )
 
-    dpi = dpi_override or int(data.get("dpi", 400))
+    raw_dpi = data.get("dpi")
+    try:
+        parsed_dpi = int(raw_dpi) if raw_dpi is not None and raw_dpi != "" else 400
+    except (TypeError, ValueError):
+        parsed_dpi = 400
+    dpi = dpi_override or parsed_dpi
     raw_hint = data.get("folder_hint")
     folder_hint = str(raw_hint).strip() if raw_hint not in (None, "") else None
     raw_fp = data.get("folder_path")

@@ -393,7 +393,6 @@ def build_scaffold(
     finally:
         doc.close()
 
-    flat = flatten_questions(questions)
     leaves = gradable_questions(questions)
     total_marks = sum(q.marks for q in leaves)
     raw_description = (

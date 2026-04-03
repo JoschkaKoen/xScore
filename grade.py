@@ -181,7 +181,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     from pipeline.student_list import read_student_list
 
     # ------------------------------------------------------------------ #
-    # Step 1: Create shared API client (reused across all pipeline steps) #
+    # Prerequisite: create shared API client (reused across all steps)   #
     # ------------------------------------------------------------------ #
     client = KimiProvider.create_client()
     if client is None:
@@ -192,7 +192,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     ok_line("Kimi API client ready.")
 
     # ------------------------------------------------------------------ #
-    # Step 2: Parse natural language prompt                               #
+    # Step 1: Parse natural language prompt                               #
     # ------------------------------------------------------------------ #
     pipeline_step(1, "Parse natural language prompt")
     info_line(f"Prompt: {args.prompt!r}")
@@ -235,7 +235,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
-    # Step 3: Find exam folder                                            #
+    # Step 2: Find exam folder                                            #
     # ------------------------------------------------------------------ #
     pipeline_step(2, "Find exam folder")
     folder = find_folder(
@@ -257,7 +257,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
-    # Step 4: Read student list                                           #
+    # Step 3: Read student list                                           #
     # ------------------------------------------------------------------ #
     pipeline_step(3, "Load roster")
     students = read_student_list(folder)
@@ -268,7 +268,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
-    # Step 5: Build exam scaffold                                         #
+    # Step 4: Build exam scaffold                                         #
     # ------------------------------------------------------------------ #
     pipeline_step(4, "Build exam scaffold")
     if rescaffold:
@@ -288,7 +288,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
-    # Step 6: Clean scan PDF                                              #
+    # Step 5: Clean scan PDF                                              #
     # ------------------------------------------------------------------ #
     pipeline_step(5, "Clean scan PDF")
     if skip_clean_scan:
@@ -320,7 +320,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
-    # Step 7: Page assignment                                             #
+    # Step 6: Page assignment                                             #
     # ------------------------------------------------------------------ #
     pipeline_step(6, "Assign pages to students")
     from config import NAME_CROP_FRACTION, NAME_RECOGNITION_DPI
@@ -344,7 +344,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
-    # Step 8: Exercise detection                                          #
+    # Step 7: Exercise detection                                          #
     # ------------------------------------------------------------------ #
     pipeline_step(7, "Detect answered exercises")
     exercise_map = detect_answered_exercises(
@@ -357,7 +357,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
-    # Step 9: Grade                                                       #
+    # Steps 8–9: Grade and print results                                  #
     # ------------------------------------------------------------------ #
     pipeline_step(8, "Grade submissions")
     results = grade_students(
@@ -373,7 +373,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
-    # Step 10: Ground truth evaluation (if file exists in exam folder)   #
+    # Step 10: Ground truth evaluation (if file exists in exam folder)    #
     # ------------------------------------------------------------------ #
     pipeline_step(10, "Ground truth evaluation")
     eval_data: dict | None = None
