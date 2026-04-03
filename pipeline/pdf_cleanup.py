@@ -1,4 +1,4 @@
-"""Wrapper around autograder.process_pdf() — cleans a scanned exam PDF."""
+"""Clean a class scan PDF (rotate + de-blank + optional deskew) into *artifact_dir*."""
 
 from __future__ import annotations
 
@@ -39,8 +39,7 @@ def cleanup_pdf(
     ad = artifact_dir or exam_artifact_dir(folder, output_base)
     ad.mkdir(parents=True, exist_ok=True)
 
-    # Late imports so the pipeline package doesn't force autograder deps at module load
-    from autograder import process_pdf  # type: ignore[import]
+    from pipeline.scan_preprocess import process_pdf
 
     output = ad / "cleaned_scan.pdf"
     legacy_out = folder / "cleaned_scan.pdf"

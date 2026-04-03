@@ -465,7 +465,7 @@ def deskew_pdf_raster(
     to a sibling temp path and ``Path.replace`` afterward.
 
     Args:
-        input_pdf: Source PDF (already OSD-rotated by autograder).
+        input_pdf: Source PDF (already OSD-rotated by :func:`pipeline.scan_preprocess.process_pdf`).
         output_pdf: Destination PDF (must not resolve to the same path as *input_pdf*).
         dpi: Render/output DPI.
         reflines_sidecar: Optional path for the ``*_reflines.json`` sidecar.

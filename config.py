@@ -3,7 +3,7 @@
 config.py
 ---------
 Configuration for Auto-Grader. Edit values here or set the noted environment
-variables. See README.md and AGENTS.md for full detail.
+variables. See README.md for full detail.
 
 How to run (from repo root, with venv activated and dependencies installed):
 
@@ -11,9 +11,6 @@ How to run (from repo root, with venv activated and dependencies installed):
     python3 -m venv .venv && source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
     pip install -r requirements.txt
     # Create .env with GOOGLE_API_KEY or GEMINI_API_KEY (Gemini) and/or KIMI_API_KEY (Kimi).
-
-  Clean a scan PDF (local only; Poppler + Tesseract):
-    python autograder.py input.pdf output.pdf
 
   Extract answers — IGCSE-style profile, uses AI_MODEL below (Gemini or Kimi):
     python scripts/extract_answers.py

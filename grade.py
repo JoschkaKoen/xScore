@@ -33,7 +33,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from version import __version__
+__version__ = "0.1"
 
 
 class _Tee:

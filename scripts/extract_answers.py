@@ -35,7 +35,7 @@ from config import (
     PDF_DPI,
     SAVE_DEBUG_IMAGES,
 )
-from version import __version__
+__version__ = "0.1"
 
 from extraction.eval import extract_first_n_students_eval
 from extraction.ground_truth import (

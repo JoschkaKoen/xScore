@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from version import __version__
+__version__ = "0.1"
 
 from extraction.eval import extract_first_n_students_eval
 from extraction.providers import call_ocr_api, create_extraction_client, get_provider, multi_pass_extract
