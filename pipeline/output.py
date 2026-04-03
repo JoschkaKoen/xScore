@@ -45,6 +45,21 @@ _BULLET_ONLY_LINE = frozenset(
     }
 )
 
+# Unicode bullets only — avoid "-" / "*" here (false positives in prose).
+_BULLET_CLASS = "•·▪‣"
+_NEWLINE_AFTER_BULLET = re.compile(
+    rf"([{_BULLET_CLASS}])\s*\n(?!\s*(?:[{_BULLET_CLASS}]))",
+)
+
+
+def _collapse_newline_after_bullet(text: str) -> str:
+    """Turn ``•\\nitem`` into ``• item``; keep ``\\n`` before ``•`` (new list item)."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = _NEWLINE_AFTER_BULLET.sub(r"\1 ", text)
+    return text
+
 
 def _normalize_scaffold_answer_lines(text: str) -> str:
     """Join mark-scheme lines where the bullet sits alone on a line before the item text."""
@@ -54,15 +69,45 @@ def _normalize_scaffold_answer_lines(text: str) -> str:
     while i < len(lines):
         raw_line = lines[i]
         stripped = raw_line.strip()
-        if stripped in _BULLET_ONLY_LINE and i + 1 < len(lines):
-            nxt = lines[i + 1].strip()
-            if nxt and nxt not in _BULLET_ONLY_LINE:
-                out.append(f"• {nxt}")
-                i += 2
-                continue
+        if stripped in _BULLET_ONLY_LINE:
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines):
+                nxt = lines[j].strip()
+                if nxt and nxt not in _BULLET_ONLY_LINE:
+                    out.append(f"• {nxt}")
+                    i = j + 1
+                    continue
         out.append(raw_line)
         i += 1
     return "\n".join(out)
+
+
+def _rejoin_lonely_bullet_wrap_lines(lines: list[str]) -> list[str]:
+    """After textwrap, merge a line that is only a bullet with the following non-empty line."""
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line == "":
+            out.append(line)
+            i += 1
+            continue
+        st = line.strip()
+        if st in _BULLET_ONLY_LINE:
+            j = i + 1
+            while j < len(lines) and lines[j] == "":
+                j += 1
+            if j < len(lines):
+                nxt_st = lines[j].strip()
+                if nxt_st and nxt_st not in _BULLET_ONLY_LINE:
+                    out.append(line.rstrip() + " " + lines[j].lstrip())
+                    i = j + 1
+                    continue
+        out.append(line)
+        i += 1
+    return out
 
 
 def print_scaffold_summary(scaffold: ExamScaffold) -> None:
@@ -99,6 +144,7 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         raw = (q.correct_answer or "").strip() or "–"
         raw = re.sub(r"\r\n?", "\n", raw)
         raw = re.sub(r"\n{3,}", "\n\n", raw)
+        raw = _collapse_newline_after_bullet(raw)
         raw = _normalize_scaffold_answer_lines(raw)
 
         wrapped_lines: list[str] = []
@@ -115,6 +161,8 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
                 break_on_hyphens=True,
             )
             wrapped_lines.extend(chunk if chunk else [""])
+
+        wrapped_lines = _rejoin_lonely_bullet_wrap_lines(wrapped_lines)
 
         if not wrapped_lines:
             wrapped_lines = ["–"]
