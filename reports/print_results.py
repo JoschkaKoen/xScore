@@ -1,4 +1,4 @@
-"""Well-formatted terminal output for the grading pipeline."""
+"""Well-formatted terminal output for the grading pipeline (Rich)."""
 
 from __future__ import annotations
 
@@ -7,26 +7,22 @@ import shutil
 import statistics
 import textwrap
 
-from extraction.reporting import Colors
+from rich import box
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.table import Table
+from rich.text import Text
 
 from shared.models import ExamScaffold, PageAssignment, StudentResult
-from shared.terminal_ui import icon, paint, rule, BOLD, CYAN
+from shared.terminal_ui import get_console, icon
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _bar(width: int = 60) -> str:
-    return "─" * width
-
-
-def _pct_color(pct: float) -> str:
+def _pct_style(pct: float) -> str:
     if pct >= 80:
-        return Colors.GREEN
+        return "green"
     if pct >= 50:
-        return Colors.YELLOW
-    return Colors.RED
+        return "yellow"
+    return "red"
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +41,6 @@ _BULLET_ONLY_LINE = frozenset(
     }
 )
 
-# Unicode bullets only — avoid "-" / "*" here (false positives in prose).
 _BULLET_CLASS = "•·▪‣"
 _NEWLINE_AFTER_BULLET = re.compile(
     rf"([{_BULLET_CLASS}])\s*\n(?!\s*(?:[{_BULLET_CLASS}]))",
@@ -112,33 +107,32 @@ def _rejoin_lonely_bullet_wrap_lines(lines: list[str]) -> list[str]:
 
 def print_scaffold_summary(scaffold: ExamScaffold) -> None:
     """Print gradable questions with wrapped model answers (multi-line safe)."""
-    print()
-    print(rule("═"))
+    c = get_console()
     leaves = scaffold.gradable_questions
-    print(
-        paint(
-            f"  {icon('gear')}  EXAM SCAFFOLD  —  {len(scaffold.questions)} top-level, "
-            f"{len(leaves)} gradable parts, {scaffold.total_marks} total marks",
-            CYAN,
-            BOLD,
-        )
-    )
-    print(rule("═"))
-    # Fixed-width meta columns; answer text wraps in remaining terminal width.
     w_q, w_ty, w_m = 10, 24, 5
     meta_len = 2 + w_q + w_ty + w_m + 2
     term_w = max(64, shutil.get_terminal_size((96, 20)).columns)
     ans_width = max(32, term_w - meta_len)
 
-    print(
-        f"  {'Question':<{w_q}}{'Type':<{w_ty}}{'Marks':>{w_m}}  "
-        "Model answer (wrapped to terminal width)"
-    )
-    print(f"  {_bar(min(term_w - 4, 92))}")
-
     def _type_cell(qt: str) -> str:
         label = qt.replace("_", " ")
         return label if len(label) <= w_ty else label[: w_ty - 1] + "…"
+
+    table = Table(
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+        title=(
+            f"{icon('gear')}  EXAM SCAFFOLD  —  {len(scaffold.questions)} top-level, "
+            f"{len(leaves)} gradable parts, {scaffold.total_marks} total marks"
+        ),
+        title_style="bold cyan",
+        expand=False,
+    )
+    table.add_column("Question", width=w_q, overflow="ellipsis")
+    table.add_column("Type", width=w_ty, overflow="ellipsis")
+    table.add_column("Marks", justify="right", width=w_m)
+    table.add_column("Model answer (wrapped)", overflow="fold", max_width=ans_width + 8)
 
     for q in leaves:
         raw = (q.correct_answer or "").strip() or "–"
@@ -167,165 +161,192 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         if not wrapped_lines:
             wrapped_lines = ["–"]
 
-        q_label = f"Q{q.number}"
-        first_meta = f"  {q_label:<{w_q}}{_type_cell(q.question_type):<{w_ty}}{q.marks:>{w_m}}  "
-        indent = " " * len(first_meta)
+        answer_cell = Text("\n".join(wrapped_lines))
+        table.add_row(
+            f"Q{q.number}",
+            _type_cell(q.question_type),
+            str(q.marks),
+            answer_cell,
+        )
 
-        for i, line in enumerate(wrapped_lines):
-            if i == 0:
-                print(first_meta + line)
-            else:
-                print(indent + line)
-
-    print(rule("═"))
-    print()
+    c.print()
+    c.print(Panel(table, border_style="dim cyan"))
+    c.print()
 
 
 # ---------------------------------------------------------------------------
 # Page assignment summary
 # ---------------------------------------------------------------------------
 
+
 def print_page_summary(page_map: list[PageAssignment], students: list[str]) -> None:
-    print()
-    print(rule("═"))
-    print(
-        paint(
-            f"  {icon('users')}  PAGE ASSIGNMENT  —  {len(page_map)} student(s) identified",
-            CYAN,
-            BOLD,
-        )
+    c = get_console()
+    table = Table(
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+        title=f"{icon('users')}  PAGE ASSIGNMENT  —  {len(page_map)} student(s) identified",
+        title_style="bold cyan",
     )
-    print(rule("═"))
+    table.add_column("Student", min_width=20)
+    table.add_column("Pages", overflow="fold")
+    table.add_column("Conf.", justify="center", width=8)
 
     found_names = {a.student_name for a in page_map}
 
     for assignment in page_map:
-        conf_color = Colors.GREEN if assignment.confidence == "high" else Colors.YELLOW
         pages_str = ", ".join(str(p) for p in assignment.page_numbers)
-        print(
-            f"  {assignment.student_name:<20} "
-            f"pages [{pages_str}]  "
-            f"{conf_color}({assignment.confidence}){Colors.RESET}"
+        conf_style = "green" if assignment.confidence == "high" else "yellow"
+        table.add_row(
+            assignment.student_name,
+            pages_str,
+            Text(f"({assignment.confidence})", style=conf_style),
         )
+
+    c.print()
+    c.print(Panel(table, border_style="dim cyan"))
 
     not_found = [s for s in students if s not in found_names]
     if not_found:
-        print(f"\n  {Colors.RED}Students in roster NOT found in scan:{Colors.RESET}")
+        c.print()
+        c.print(f"[red]  Students in roster NOT found in scan:[/]")
         for name in not_found:
-            print(f"    – {name}")
-
-    print(rule("═"))
-    print()
+            c.print(f"    – {name}")
+    c.print()
 
 
 # ---------------------------------------------------------------------------
 # Exercise detection summary
 # ---------------------------------------------------------------------------
 
+
 def print_exercise_summary(exercise_map: dict[str, list[str]]) -> None:
-    print()
-    print(rule("═"))
-    print(paint(f"  {icon('search')}  ANSWERED EXERCISES", CYAN, BOLD))
-    print(rule("═"))
+    c = get_console()
+    table = Table(
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+        title=f"{icon('search')}  ANSWERED EXERCISES",
+        title_style="bold cyan",
+    )
+    table.add_column("Student", min_width=20)
+    table.add_column("Questions", overflow="fold")
+
     for name, questions in exercise_map.items():
         q_str = ", ".join(questions) if questions else "none"
-        print(f"  {name:<20}  Q: {q_str}")
-    print(rule("═"))
-    print()
+        table.add_row(name, q_str)
+
+    c.print()
+    c.print(Panel(table, border_style="dim cyan"))
+    c.print()
 
 
 # ---------------------------------------------------------------------------
 # Results table
 # ---------------------------------------------------------------------------
 
+
 def print_results_table(results: list[StudentResult], scaffold: ExamScaffold) -> None:
+    c = get_console()
     if not results:
-        print("  No results to display.")
+        c.print("[dim]  No results to display.[/]")
         return
 
     q_nums = [q.number for q in scaffold.gradable_questions]
-    max_name = max((len(r.student_name) for r in results), default=10)
-    col_w = 5  # per-question column width
+    col_w = 5
 
-    header_q = "".join(f"  Q{n:<{col_w}}" for n in q_nums)
-    print()
-    print(rule("═"))
-    print(paint(f"  {icon('chart')}  RESULTS TABLE", CYAN, BOLD))
-    print(rule("═"))
-    print(f"  {'Student':<{max_name}}  {header_q}  {'Total':>7}  {'%':>6}")
-    print(f"  {_bar(max_name + len(header_q) + 18)}")
+    table = Table(
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+        title=f"{icon('chart')}  RESULTS TABLE",
+        title_style="bold cyan",
+        show_lines=False,
+    )
+    table.add_column("Student", min_width=12, no_wrap=True)
+    for n in q_nums:
+        table.add_column(f"Q{n}", justify="right", width=col_w + 1)
+    table.add_column("Total", justify="right", width=8)
+    table.add_column("%", justify="right", width=7)
 
     for r in results:
-        q_marks = "".join(
-            f"  {str(r.marks_per_question.get(n, '–')):>{col_w + 2}}"
-            for n in q_nums
-        )
         pct = (r.total_marks / r.max_marks * 100) if r.max_marks else 0.0
-        color = _pct_color(pct)
-        print(
-            f"  {r.student_name:<{max_name}}  {q_marks}  "
-            f"{color}{r.total_marks:>6.1f}  {pct:>5.1f}%{Colors.RESET}"
-        )
+        st = _pct_style(pct)
+        row_cells: list[str | Text] = [r.student_name]
+        for n in q_nums:
+            row_cells.append(str(r.marks_per_question.get(n, "–")))
+        row_cells.append(Text(f"{r.total_marks:6.1f}", style=st))
+        row_cells.append(Text(f"{pct:5.1f}%", style=st))
+        table.add_row(*row_cells)
 
-    print(rule("═"))
-    print()
+    c.print()
+    c.print(Panel(table, border_style="dim cyan"))
+    c.print()
 
 
 # ---------------------------------------------------------------------------
 # Grand summary
 # ---------------------------------------------------------------------------
 
+
 def print_evaluation_summary(eval_data: dict, scaffold: ExamScaffold) -> None:
     """Print per-student and overall accuracy against ground truth."""
+    c = get_console()
     overall_pct = eval_data["overall_accuracy_pct"]
     overall_str = (
         f"{eval_data['overall_correct']}/{eval_data['overall_total']}"
         f"  ({overall_pct:.1f}%)"
     )
-    color = _pct_color(overall_pct)
+    st_overall = _pct_style(overall_pct)
 
-    print()
-    print(rule("═"))
-    print(paint(f"  {icon('chart')}  GROUND TRUTH EVALUATION", CYAN, BOLD))
-    print(rule("═"))
-    print(f"  Overall accuracy: {color}{overall_str}{Colors.RESET}")
-    print()
+    c.print()
+    c.print(Rule(f"{icon('chart')}  GROUND TRUTH EVALUATION", style="bold cyan"))
+    c.print(
+        Text.assemble(
+            "  Overall accuracy: ",
+            (overall_str, st_overall),
+        )
+    )
+    c.print()
 
     q_nums = [q.number for q in scaffold.gradable_questions]
-    max_name = max((len(r["name"]) for r in eval_data["per_student"]), default=10)
 
-    # Header
-    q_hdr = "  ".join(f"Q{n}" for n in q_nums)
-    print(f"  {'Student':<{max_name}}  {q_hdr:<{len(q_hdr)}}  {'Acc':>6}")
-    print(f"  {_bar(max_name + len(q_hdr) + 12)}")
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan", padding=(0, 1))
+    table.add_column("Student", min_width=12, no_wrap=True)
+    for n in q_nums:
+        table.add_column(f"Q{n}", justify="center", width=4)
+    table.add_column("Acc", justify="right", min_width=14)
 
     for row in eval_data["per_student"]:
         pq = row["per_question"]
-        cells = []
+        cells: list[str | Text] = [row["name"]]
         for q_num in q_nums:
             info = pq.get(q_num)
             if info is None:
-                cells.append(" –")
+                cells.append("–")
             elif info["ok"]:
-                cells.append(f"{Colors.GREEN}{info['extracted']:>2}{Colors.RESET}")
+                cells.append(Text(f"{info['extracted']:>2}", style="green"))
             else:
-                cells.append(f"{Colors.RED}{info['extracted']:>2}{Colors.RESET}")
-        cell_str = "  ".join(cells)
+                cells.append(Text(f"{info['extracted']:>2}", style="red"))
         acc_pct = row["accuracy_pct"]
-        acc_color = _pct_color(acc_pct)
-        print(
-            f"  {row['name']:<{max_name}}  {cell_str}  "
-            f"{acc_color}{row['correct']}/{row['total']} ({acc_pct:.0f}%){Colors.RESET}"
+        acc_st = _pct_style(acc_pct)
+        cells.append(
+            Text(
+                f"{row['correct']}/{row['total']} ({acc_pct:.0f}%)",
+                style=acc_st,
+            )
         )
+        table.add_row(*cells)
 
-    print(rule("═"))
-    print()
+    c.print(Panel(table, border_style="dim cyan"))
+    c.print()
 
 
 def print_grand_summary(results: list[StudentResult]) -> None:
     if not results:
         return
 
+    c = get_console()
     totals = [r.total_marks for r in results]
     max_m = results[0].max_marks if results else 0
 
@@ -334,23 +355,25 @@ def print_grand_summary(results: list[StudentResult]) -> None:
     hi = max(totals)
     lo = min(totals)
 
-    def fmt(val: float) -> str:
+    def fmt_cell(val: float) -> Text:
         pct = (val / max_m * 100) if max_m else 0
-        color = _pct_color(pct)
-        return f"{color}{val:.1f} ({pct:.0f}%){Colors.RESET}"
+        st = _pct_style(pct)
+        return Text(f"{val:.1f} ({pct:.0f}%)", style=st)
 
-    print(rule("═"))
-    print(
-        paint(
-            f"  {icon('chart')}  CLASS STATISTICS  —  {len(results)} student(s) graded",
-            CYAN,
-            BOLD,
-        )
+    table = Table(
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+        title=f"{icon('chart')}  CLASS STATISTICS  —  {len(results)} student(s) graded",
+        title_style="bold cyan",
     )
-    print(rule("═"))
-    print(f"  Mean:    {fmt(mean)}")
-    print(f"  Median:  {fmt(median)}")
-    print(f"  Highest: {fmt(hi)}")
-    print(f"  Lowest:  {fmt(lo)}")
-    print(rule("═"))
-    print()
+    table.add_column("Metric", style="dim")
+    table.add_column("Value", justify="right")
+
+    table.add_row("Mean", fmt_cell(mean))
+    table.add_row("Median", fmt_cell(median))
+    table.add_row("Highest", fmt_cell(hi))
+    table.add_row("Lowest", fmt_cell(lo))
+
+    c.print(Panel(table, border_style="dim cyan"))
+    c.print()

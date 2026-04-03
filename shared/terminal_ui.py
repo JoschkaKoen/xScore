@@ -1,9 +1,7 @@
-"""TTY-aware ANSI colors and optional emoji for CLI output.
+"""CLI output via Rich (tables/panels use :func:`get_console`).
 
-Respects `NO_COLOR` (https://no-color.org/) and `FORCE_COLOR`. Set `ASCII_LOG=1` to
-disable emoji (ASCII fallbacks). Set ``PIPELINE_VERBOSE=1`` or ``GRADE_VERBOSE=1`` for
-wide step banners and extra detail from some modules. Colors follow the real terminal
-attached behind any ``_stdout`` wrapper (e.g. ``grade.py``'s log tee).
+Respects ``NO_COLOR`` and ``FORCE_COLOR``. Set ``ASCII_LOG=1`` to disable emoji.
+Set ``PIPELINE_VERBOSE=1`` or ``GRADE_VERBOSE=1`` for wide step banners.
 """
 
 from __future__ import annotations
@@ -11,7 +9,10 @@ from __future__ import annotations
 import os
 import sys
 
-# ANSI SGR codes
+from rich.console import Console
+from rich.rule import Rule
+
+# Legacy ANSI constants (some callers still pass these to :func:`paint`)
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
@@ -107,55 +108,82 @@ def rule(char: str = "═", width: int = 60) -> str:
     return paint(line, DIM) if use_color() else line
 
 
+def get_console() -> Console:
+    """Console writing to current ``sys.stdout`` (works with ``grade.py`` tee)."""
+    uc = use_color()
+    return Console(
+        file=sys.stdout,
+        force_terminal=uc,
+        no_color=not uc,
+        emoji=use_emoji(),
+        highlight=False,
+        soft_wrap=True,
+    )
+
+
+def get_stderr_console() -> Console:
+    uc = use_color()
+    return Console(
+        file=sys.stderr,
+        force_terminal=uc,
+        no_color=not uc,
+        emoji=use_emoji(),
+        highlight=False,
+        soft_wrap=True,
+    )
+
+
 def pipeline_verbose() -> bool:
     """True when ``PIPELINE_VERBOSE`` or ``GRADE_VERBOSE`` requests heavy banners / debug."""
     v = (os.environ.get("PIPELINE_VERBOSE") or os.environ.get("GRADE_VERBOSE") or "").strip()
     return v.lower() in ("1", "true", "yes", "on")
 
 
-def pipeline_step(readme_step: int, title: str, *, width: int = 60) -> None:
+def pipeline_step(readme_step: int, title: str) -> None:
     """Print a pipeline step header (compact by default; wide rules if :func:`pipeline_verbose`)."""
-    print()
+    c = get_console()
     label = f"  {icon('step')}  Step {readme_step} — {title}"
+    c.print()
     if pipeline_verbose():
-        print(rule("═", width))
-        print(paint(label, CYAN, BOLD))
-        print(rule("═", width))
+        c.print(Rule(style="dim", characters="═"))
+        c.print(f"[bold cyan]{label}[/]")
+        c.print(Rule(style="dim", characters="═"))
     else:
-        print(paint(label, CYAN, BOLD))
+        c.print(f"[bold cyan]{label}[/]")
+    sys.stdout.flush()
 
 
 def progress_line(message: str) -> None:
     """Highlight the current action (brighter than :func:`info_line`)."""
-    print(paint(f"  {icon('info')}  {message}", CYAN), flush=True)
+    c = get_console()
+    c.print(f"[cyan]  {icon('info')}  {message}[/]")
+    sys.stdout.flush()
 
 
 def info_line(message: str, *, key: str = "info") -> None:
-    print(paint(f"  {icon(key)}  {message}", DIM))
+    get_console().print(f"[dim]  {icon(key)}  {message}[/]")
 
 
 def ok_line(message: str) -> None:
-    print(paint(f"  {icon('ok')}  {message}", GREEN), flush=True)
+    get_console().print(f"[green]  {icon('ok')}  {message}[/]")
+    sys.stdout.flush()
 
 
 def warn_line(message: str) -> None:
-    print(paint(f"  {icon('warn')}  {message}", YELLOW))
+    get_console().print(f"[yellow]  {icon('warn')}  {message}[/]")
 
 
 def err_line(message: str) -> None:
-    print(paint(f"  {icon('err')}  {message}", RED), file=sys.stderr)
+    get_stderr_console().print(f"[red]  {icon('err')}  {message}[/]")
 
 
 def note_line(message: str) -> None:
     """Neutral highlighted line (e.g. paths)."""
-    print(paint(f"  {icon('doc')}  {message}", BLUE))
+    get_console().print(f"[blue]  {icon('doc')}  {message}[/]")
 
 
 def tool_line(tool: str, message: str) -> None:
     """Sub-system tag aligned with other status lines, e.g. ``  [deskew] …``."""
     tag = f"[{tool}]"
-    indent = "  "
-    if use_color():
-        print(f"{indent}{paint(tag, MAGENTA, BOLD)} {message}", flush=True)
-    else:
-        print(f"{indent}{tag} {message}", flush=True)
+    get_console().print(f"  [bold magenta]{tag}[/] {message}")
+    sys.stdout.flush()

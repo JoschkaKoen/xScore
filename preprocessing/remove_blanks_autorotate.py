@@ -16,6 +16,10 @@ import pikepdf
 import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
+from rich import box
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
+from rich.table import Table
 
 # ---------------------------------------------------------------------------
 # Configuration defaults
@@ -77,13 +81,11 @@ def process_pdf(
     output_path = Path(output_path)
 
     from shared.terminal_ui import (
-        BOLD,
-        CYAN,
         err_line,
+        get_console,
         icon,
         note_line,
         ok_line,
-        paint,
         warn_line,
     )
 
@@ -98,22 +100,31 @@ def process_pdf(
         err_line(f"Input file not found: {input_path}")
         sys.exit(1)
 
+    c = get_console()
+
     if verbose:
-        print()
-        print(paint(f"  {icon('doc')}  PDF prep  —  {input_path.name}", CYAN, BOLD))
+        c.print()
+        c.print(
+            Panel(
+                f"[bold cyan]{icon('doc')}  PDF prep  —  {input_path.name}[/]",
+                border_style="dim cyan",
+            )
+        )
         note_line(f"Full path: {input_path}")
         note_line(
             f"Analysis DPI: {analysis_dpi}  |  Blank: mean≥{blank_mean}, std≤{blank_std}"
         )
 
     if verbose:
-        print(paint(f"\n  {icon('broom')}  Pass 1: blank detection @ {BLANK_DPI} DPI", CYAN, BOLD))
+        c.print(
+            f"\n[bold cyan]  {icon('broom')}  Pass 1: blank detection @ {BLANK_DPI} DPI[/]"
+        )
     low_res_pages = convert_from_path(
         str(input_path), dpi=BLANK_DPI, grayscale=True, thread_count=os.cpu_count() or 4
     )
     total_pages = len(low_res_pages)
     if verbose:
-        print(f"Total pages: {total_pages}")
+        c.print(f"  Total pages: {total_pages}")
 
     content_page_nums: list[int] = []
     blank_page_nums: list[int] = []
@@ -126,7 +137,9 @@ def process_pdf(
             content_page_nums.append(page_num)
 
     if verbose:
-        print(f"  → {len(blank_page_nums)} blank pages, {len(content_page_nums)} content pages")
+        c.print(
+            f"  → {len(blank_page_nums)} blank pages, {len(content_page_nums)} content pages"
+        )
 
     del low_res_pages
 
@@ -136,13 +149,9 @@ def process_pdf(
 
     num_workers = min(os.cpu_count() or 4, len(content_page_nums))
     if verbose:
-        print(
-            paint(
-                f"\n  {icon('gear')}  Pass 2: OSD rotation on {len(content_page_nums)} pages "
-                f"@ {analysis_dpi} DPI ({num_workers} workers)",
-                CYAN,
-                BOLD,
-            )
+        c.print(
+            f"\n[bold cyan]  {icon('gear')}  Pass 2: OSD rotation on {len(content_page_nums)} pages "
+            f"@ {analysis_dpi} DPI ({num_workers} workers)[/]"
         )
 
     rotation_map: dict[int, int] = {}
@@ -153,18 +162,40 @@ def process_pdf(
             executor.submit(_osd_worker, pn, input_str, analysis_dpi): pn
             for pn in content_page_nums
         }
-        for future in as_completed(futures):
-            page_num, angle = future.result()
-            rotation_map[page_num] = angle
+        with Progress(
+            TextColumn("[cyan]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=c,
+            transient=True,
+        ) as prog:
+            task_id = prog.add_task("OSD rotation", total=len(futures))
+            for future in as_completed(futures):
+                page_num, angle = future.result()
+                rotation_map[page_num] = angle
+                prog.advance(task_id)
 
     if verbose:
-        print(paint(f"\n  {icon('chart')}  Rotation summary", CYAN, BOLD))
+        rot_table = Table(
+            box=box.SIMPLE,
+            show_header=True,
+            header_style="bold cyan",
+            title=f"{icon('chart')}  Rotation summary",
+            title_style="bold cyan",
+        )
+        rot_table.add_column("Page", justify="right", style="dim")
+        rot_table.add_column("Status", overflow="fold")
+
         for pn in sorted(rotation_map):
             angle = rotation_map[pn]
             status = f"rotate {angle}°" if angle != 0 else "ok"
-            print(f"  Page {pn:>3}: {status}")
+            rot_table.add_row(str(pn), status)
         for pn in sorted(blank_page_nums):
-            print(f"  Page {pn:>3}: blank (removed)")
+            rot_table.add_row(str(pn), "blank (removed)")
+
+        c.print()
+        c.print(Panel(rot_table, border_style="dim cyan"))
+
     else:
         angle_counts = Counter(rotation_map.values())
         parts: list[str] = []
@@ -203,10 +234,9 @@ def process_pdf(
 
     if verbose:
         ok_line("Passes 1–2 complete (rotate + de-blank).")
+        c.print()
     else:
         ok_line(
             f"Prep: {len(content_page_nums)}/{total_pages} pages kept "
             f"({len(blank_page_nums)} blank removed) · {rot_s} → {output_path.name}"
         )
-    if verbose:
-        print()

@@ -50,7 +50,9 @@ class GeminiProvider:
         answer_fields: list[str],
     ) -> dict:
         if not isinstance(client, genai.Client):
-            print("    Error: Gemini model selected but wrong client type")
+            from shared.terminal_ui import err_line
+
+            err_line("Gemini model selected but wrong client type")
             return _failed_record("Client type mismatch for Gemini", answer_fields)
         if USE_ENSEMBLE:
             return self._ensemble(client, image_bytes, page_num, prompt, schema, answer_fields, ENSEMBLE_CALLS)
@@ -95,8 +97,17 @@ class GeminiProvider:
                 if response.parsed:
                     return normalize_extracted_record(response.parsed.model_dump(), answer_fields)
                 raw = response.text or ""
-                print(f"\n    [DEBUG] finish_reason={finish_reason}")
-                print(f"    [DEBUG] full response ({len(raw)} chars):\n{raw}\n")
+                from rich.panel import Panel
+
+                from shared.terminal_ui import get_console
+
+                get_console().print(
+                    Panel(
+                        f"finish_reason={finish_reason}\n\n{raw}",
+                        title=f"[DEBUG] full response ({len(raw)} chars)",
+                        border_style="dim",
+                    )
+                )
                 try:
                     return normalize_extracted_record(json.loads(raw), answer_fields)
                 except (json.JSONDecodeError, ValueError) as parse_err:
@@ -105,11 +116,15 @@ class GeminiProvider:
                     ) from parse_err
 
             except Exception as e:
-                print(f"    API error (attempt {attempt}/{MAX_RETRIES}): {e}")
+                from shared.terminal_ui import warn_line
+
+                warn_line(f"Gemini API error (attempt {attempt}/{MAX_RETRIES}): {e}")
                 last_error = e
 
             if attempt < MAX_RETRIES:
-                print(f"    Retrying in {backoff}s...")
+                from shared.terminal_ui import info_line
+
+                info_line(f"Retrying in {backoff}s…")
                 time.sleep(backoff)
                 backoff *= 2
 

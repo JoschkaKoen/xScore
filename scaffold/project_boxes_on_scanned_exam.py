@@ -582,11 +582,34 @@ def _print_page_transforms(
 
     entry = next((e for e in data if e["page"] == page_number), None)
     if entry is None:
-        print(f"Page {page_number} not found in {reflines_json.name}")
+        from rich.panel import Panel
+
+        from shared.terminal_ui import get_console
+
+        get_console().print(
+            Panel(
+                f"Page {page_number} not found in {reflines_json.name}",
+                border_style="red",
+            )
+        )
         return
 
     top_tf, bot_tf = compute_page_transforms(raw_anchors, entry["anchors"])
-    print(f"Page {page_number}:")
-    print(f"  top_transform: {top_tf}")
-    print(f"  bot_transform: {bot_tf}")
-    print(f"  scale ratio top/bot: {top_tf.scale / bot_tf.scale:.5f}")
+    from rich import box
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from shared.terminal_ui import get_console
+
+    t = Table(
+        box=box.ROUNDED,
+        title=f"Page {page_number} transforms",
+        title_style="bold cyan",
+        show_header=False,
+    )
+    t.add_column("Field", style="dim")
+    t.add_column("Value", overflow="fold")
+    t.add_row("top_transform", str(top_tf))
+    t.add_row("bot_transform", str(bot_tf))
+    t.add_row("scale ratio top/bot", f"{top_tf.scale / bot_tf.scale:.5f}")
+    get_console().print(Panel(t, border_style="dim cyan"))

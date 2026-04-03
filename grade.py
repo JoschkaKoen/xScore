@@ -46,7 +46,10 @@ class _Tee:
 
     def write(self, text: str) -> int:
         self._stdout.write(text)
-        self._log.write(re.sub(r"\x1b\[[0-9;]*m", "", text))
+        # Strip CSI/OSC sequences so log files stay plain (Rich + legacy ANSI).
+        plain = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+        plain = re.sub(r"\x1b\][^\x07]*\x07", "", plain)
+        self._log.write(plain)
         return len(text)
 
     def flush(self) -> None:
@@ -135,10 +138,18 @@ def main() -> None:
     log_path = Path("logs") / f"{timestamp}.log"
     tee = _Tee(log_path)
     sys.stdout = tee
-    from shared.terminal_ui import BOLD, BLUE, icon, note_line, paint
+    from rich.panel import Panel
 
-    print()
-    print(paint(f"  {icon('spark')}  grade.py  —  Auto-Grader {__version__}", BLUE, BOLD))
+    from shared.terminal_ui import get_console, icon, note_line
+
+    c = get_console()
+    c.print()
+    c.print(
+        Panel(
+            f"[bold blue]{icon('spark')}  grade.py  —  Auto-Grader {__version__}[/]",
+            border_style="blue",
+        )
+    )
     note_line(f"Log file: {log_path}")
 
     try:

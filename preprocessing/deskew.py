@@ -294,9 +294,11 @@ def detect_reference_lines(half_gray: np.ndarray) -> list[ReferenceLine]:
         lines.append(ReferenceLine(x_center=xc, y_start=y_start, y_end=y_end))
 
     if len(lines) != 3:
-        print(
-            f"[deskew] WARNING: expected 3 reference lines, found {len(lines)} "
-            f"(half size {hh}x{hw})"
+        from shared.terminal_ui import tool_line
+
+        tool_line(
+            "deskew",
+            f"WARNING: expected 3 reference lines, found {len(lines)} (half size {hh}x{hw})",
         )
 
     return lines
@@ -367,9 +369,12 @@ def extract_igcse_template(
 
     template = strip[y0:y1, x0:x1].copy()
     if verbose:
-        print(
-            f"[deskew] IGCSE template: {template.shape[1]}x{template.shape[0]}px "
-            f"at bbox=({x0},{y0},{x1},{y1})  OCR conf={best_conf}"
+        from shared.terminal_ui import tool_line
+
+        tool_line(
+            "deskew",
+            f"IGCSE template: {template.shape[1]}x{template.shape[0]}px "
+            f"at bbox=({x0},{y0},{x1},{y1})  OCR conf={best_conf}",
         )
     return template
 
@@ -420,10 +425,13 @@ def detect_igcse_anchors(
     left_anchor  = _match_in(half_gray[:search_h, :mid_x],  x_offset=0)
     right_anchor = _match_in(half_gray[:search_h, mid_x:],  x_offset=mid_x)
 
-    if left_anchor is None:
-        print("[deskew] WARNING: IGCSE anchor not found in left sub-page header")
-    if right_anchor is None:
-        print("[deskew] WARNING: IGCSE anchor not found in right sub-page header")
+    if left_anchor is None or right_anchor is None:
+        from shared.terminal_ui import tool_line
+
+        if left_anchor is None:
+            tool_line("deskew", "WARNING: IGCSE anchor not found in left sub-page header")
+        if right_anchor is None:
+            tool_line("deskew", "WARNING: IGCSE anchor not found in right sub-page header")
 
     return left_anchor, right_anchor
 
@@ -554,10 +562,12 @@ def deskew_pdf_raster(
             "then Path.replace() if you need to update the original path."
         )
 
-    from shared.terminal_ui import note_line, ok_line, progress_line, tool_line
+    from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
+
+    from shared.terminal_ui import get_console, note_line, ok_line, progress_line, tool_line
 
     if verbose:
-        print()
+        get_console().print()
         tool_line("deskew", f"Rendering {input_pdf.name} at {dpi} DPI …")
         tool_line(
             "deskew",
@@ -585,10 +595,10 @@ def deskew_pdf_raster(
             ex.submit(_process_page, (i, pages[i])): i
             for i in range(n)
         }
-        for fut in as_completed(futures):
-            page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
-            results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
-            if verbose:
+        if verbose:
+            for fut in as_completed(futures):
+                page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
+                results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
                 tool_line(
                     "deskew",
                     f"  page {page_idx + 1:>3}/{n}"
@@ -596,6 +606,19 @@ def deskew_pdf_raster(
                 )
                 tool_line("deskew", f"    top lines: {_lines_str(top_lines)}")
                 tool_line("deskew", f"    bot lines: {_lines_str(bot_lines)}")
+        else:
+            with Progress(
+                TextColumn("[cyan]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=get_console(),
+                transient=True,
+            ) as prog:
+                task_id = prog.add_task("Deskew pages", total=n)
+                for fut in as_completed(futures):
+                    page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
+                    results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
+                    prog.advance(task_id)
 
     # Bootstrap IGCSE template from page 0 top half (Tesseract, runs once)
     if verbose:
@@ -713,12 +736,14 @@ def overlay_reflines_on_pdf(
     data: list[dict] = json.loads(reflines_json.read_text())
     px_to_pt = 72.0 / dpi
 
+    from shared.terminal_ui import tool_line
+
     doc = fitz.open(str(deskewed_pdf))
     try:
         if len(data) != len(doc):
-            print(
-                f"[reflines_overlay] WARNING: JSON has {len(data)} pages, "
-                f"PDF has {len(doc)} — overlaying min length"
+            tool_line(
+                "reflines_overlay",
+                f"WARNING: JSON has {len(data)} pages, PDF has {len(doc)} — overlaying min length",
             )
 
         for entry in data:
@@ -784,5 +809,5 @@ def overlay_reflines_on_pdf(
     finally:
         doc.close()
 
-    print(f"[reflines_overlay] Saved → {output_pdf}")
+    tool_line("reflines_overlay", f"Saved → {output_pdf}")
     return output_pdf

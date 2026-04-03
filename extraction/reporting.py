@@ -1,4 +1,4 @@
-"""Terminal colors, JSON I/O, LaTeX/PDF report, extraction summary."""
+"""JSON I/O, LaTeX/PDF report, extraction summary (Rich CLI)."""
 
 from __future__ import annotations
 
@@ -6,31 +6,17 @@ import json
 import subprocess
 from pathlib import Path
 
+from rich import box
+from rich.panel import Panel
+from rich.table import Table
+
 from extraction.ground_truth import fuzzy_match_name
-
-
-class Colors:
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    RESET = "\033[0m"
+from shared.terminal_ui import get_console, warn_line
 
 
 def format_accuracy(acc: float) -> str:
     """Format accuracy as percentage string."""
     return f"{acc:.0f}%"
-
-
-def color_wrong_answer(value: str, gt_value: str) -> str:
-    """Return the value in red if it doesn't match ground truth, green if correct."""
-    val_upper = value.upper().strip() if value else ""
-    gt_upper = gt_value.upper().strip() if gt_value else ""
-
-    if not val_upper or val_upper == "?":
-        return f"{Colors.RED}{value}{Colors.RESET}"
-    if val_upper == gt_upper:
-        return f"{Colors.GREEN}{value}{Colors.RESET}"
-    return f"{Colors.RED}{value}{Colors.RESET}"
 
 
 def load_existing_results(output_json: Path) -> dict[int, dict]:
@@ -42,7 +28,7 @@ def load_existing_results(output_json: Path) -> dict[int, dict]:
             records = json.load(f)
         return {r["page_number"]: r for r in records if "page_number" in r}
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-        print(f"WARNING: Could not parse existing results from {output_json} ({e}), starting fresh.")
+        warn_line(f"Could not parse existing results from {output_json} ({e}), starting fresh.")
         return {}
 
 
@@ -124,17 +110,20 @@ def generate_report_pdf(results: list[dict], output_tex: Path, output_report: Pa
     with open(output_tex, "w", encoding="utf-8") as f:
         f.write(tex)
 
-    print(f"\nCompiling LaTeX -> {output_report} ...")
+    c = get_console()
+    c.print(f"\n[dim]Compiling LaTeX → {output_report} …[/]")
     result = subprocess.run(
         ["xelatex", "-interaction=nonstopmode", str(output_tex)],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
-        print(f"  LaTeX compilation failed. Check {output_tex} for errors.")
-        print(result.stdout[-500:] if result.stdout else "")
+        c.print(f"[red]  LaTeX compilation failed. Check {output_tex} for errors.[/]")
+        tail = result.stdout[-500:] if result.stdout else ""
+        if tail:
+            c.print(Panel(tail.rstrip(), title="xelatex tail", border_style="red"))
     else:
-        print(f"  Report generated: {output_report}")
+        c.print(f"[green]  Report generated: {output_report}[/]")
 
     for ext in (".aux", ".log", ".out"):
         aux = output_tex.with_suffix(ext)
@@ -149,6 +138,7 @@ def print_summary(
     answer_fields: list[str],
 ) -> None:
     """Print a quick summary of extraction quality and accuracy."""
+    c = get_console()
     total = len(results)
     high = sum(1 for r in results if r.get("confidence") == "high")
     medium = sum(1 for r in results if r.get("confidence") == "medium")
@@ -180,17 +170,42 @@ def print_summary(
 
         overall_acc = (total_correct / total_answer_fields * 100) if total_answer_fields > 0 else 0
 
-    print(f"\n{'=' * 60}")
-    print(f"  EXTRACTION SUMMARY: {total} pages processed")
-    print(f"  High confidence:   {high}")
-    print(f"  Medium confidence: {medium}")
-    print(f"  Low confidence:    {low}")
-    print(f"  Failed:            {failed}")
-    print(f"  Unreadable names:  {unknown}")
+    table = Table(
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+        title="EXTRACTION SUMMARY",
+        title_style="bold cyan",
+    )
+    table.add_column("Metric", style="dim")
+    table.add_column("Count", justify="right")
+
+    table.add_row("Pages processed", str(total))
+    table.add_row("High confidence", str(high))
+    table.add_row("Medium confidence", str(medium))
+    table.add_row("Low confidence", str(low))
+    table.add_row("Failed", str(failed))
+    table.add_row("Unreadable names", str(unknown))
+
+    c.print()
+    c.print(Panel(table, border_style="dim cyan"))
 
     if ground_truth:
-        print(f"\n  ACCURACY SUMMARY:")
-        print(f"  Students matched to ground truth: {matched_students}/{len(ground_truth)}")
-        print(f"  Overall accuracy: {overall_acc:.1f}% ({total_correct}/{total_answer_fields} correct)")
+        acc_table = Table(
+            box=box.SIMPLE,
+            show_header=False,
+            padding=(0, 1),
+        )
+        acc_table.add_column("Key", style="dim")
+        acc_table.add_column("Value", justify="right")
+        acc_table.add_row(
+            "Students matched to ground truth",
+            f"{matched_students}/{len(ground_truth)}",
+        )
+        acc_table.add_row(
+            "Overall accuracy",
+            f"{overall_acc:.1f}% ({total_correct}/{total_answer_fields} correct)",
+        )
+        c.print(Panel(acc_table, title="Accuracy", border_style="dim green"))
 
-    print(f"{'=' * 60}")
+    c.print()
