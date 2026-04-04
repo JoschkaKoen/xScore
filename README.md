@@ -31,11 +31,11 @@ Install system dependencies:
 Not required for normal `xscore.py` use. Installs large ML dependencies (Paddle + PyTorch and models). If `easyocr` fails to install PyTorch, see [PyTorch install](https://pytorch.org/get-started/locally/) for a CPU wheel, then run `pip install easyocr` again inside `paddle_env`.
 
 **Optional — OCR name benchmark (dev / comparison)**  
-From the repo root (so `output/<exam>/…` resolves), after `pip install -r requirements.txt`:
+From the repo root (so `output/<exam>/…` resolves). Either use **`.venv`** after `pip install -r requirements.txt`, or **`paddle_env`** after `bash scripts/install_paddleocr.sh` (the install script also pulls `rich`, `pymupdf`, `pytesseract`, `openpyxl` for this script). If an older `paddle_env` misses those: `pip install rich pymupdf pytesseract openpyxl`.
 
 `python3 scripts/ocr_name_benchmark.py --folder "path/to/exam"`
 
-Uses the **newest** `cleaned_scan.pdf` under `output/<exam_stem>/` unless you pass `--pdf`. Compares Tesseract, EasyOCR, and PaddleOCR on a fixed name strip vs `StudentList.xlsx` (not the same crop as production Kimi name assignment). For Easy/Paddle, use `paddle_env` or install those packages in `.venv`.
+Uses the **newest** `cleaned_scan.pdf` under `output/<exam_stem>/` unless you pass `--pdf`. Compares Tesseract, EasyOCR, and PaddleOCR on a fixed name strip vs `StudentList.xlsx` (not the same crop as production Kimi name assignment).
 
 ---
 

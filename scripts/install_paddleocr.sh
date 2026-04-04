@@ -63,6 +63,9 @@ echo "--- Step B: paddleocr (PyPI) ---"
 echo "--- Step C: easyocr (PyPI; pulls PyTorch — large download) ---"
 "${PY}" -m pip install easyocr
 
+echo "--- Step D: scripts/ocr_name_benchmark.py (Rich, PyMuPDF, Tesseract bindings, roster xlsx) ---"
+"${PY}" -m pip install rich pymupdf pytesseract openpyxl
+
 echo ""
 echo "--- Verifying (first run may download model weights — large, normal) ---"
 "${PY}" - <<'PY'
