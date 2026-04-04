@@ -27,10 +27,10 @@ def cleanup_pdf(
     Skips processing if the output already exists and is newer than the source,
     unless *force_clean_scan* is true (output and matching anchor sidecars are removed first).
 
-    Pass 1: blank page removal (72 DPI)
-    Pass 2: OSD 90-degree rotation (pikepdf lossless)
-    Pass 3: per-half fine deskew, vertical ruling-line detection per half, IGCSE anchors,
-            sidecar JSON — only when ``deskew=True`` (default); rasterised at *dpi*.
+    Pass 1: blank removal + OSD rotation (one raster at analysis DPI; see
+            :mod:`preprocessing.remove_blanks_autorotate`), then lossless pikepdf write.
+    Pass 2: per-half fine deskew, vertical ruling-line detection per half, IGCSE anchors,
+            sidecar JSON — only when ``deskew=True`` (default); rasterised at *dpi* for this pass.
 
     Raises ``FileNotFoundError`` if no scan PDF is found.
     """
@@ -105,10 +105,10 @@ def cleanup_pdf(
         return output
 
     tool_line("start_scan", "Detect empty pages and page rotation …")
+    # OSD + blank detection use ANALYSIS_DPI only; deskew below uses *dpi*.
     process_pdf(
         input_path=str(match),
         output_path=str(output),
-        analysis_dpi=dpi,
         verbose=False,
     )
 
