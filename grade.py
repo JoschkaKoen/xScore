@@ -343,7 +343,20 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # Step 6: Page assignment                                             #
     # ------------------------------------------------------------------ #
     pipeline_step(6, "Page assignment")
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+    from functools import partial
+
     from config import NAME_CROP_FRACTION, NAME_RECOGNITION_DPI
+    from pdf2image import convert_from_path
+
+    _tc = os.cpu_count() or 4
+    info_line(f"Rendering pages for name + exercise detection @ {NAME_RECOGNITION_DPI} DPI …")
+    _t_name = time.perf_counter()
+    name_pages = convert_from_path(
+        str(cleaned_pdf), dpi=NAME_RECOGNITION_DPI, thread_count=_tc
+    )
+    ok_line(f"Pages loaded · {format_duration(time.perf_counter() - _t_name)}")
 
     page_map = assign_pages(
         cleaned_pdf,
@@ -352,6 +365,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         client=client,
         name_crop_fraction=NAME_CROP_FRACTION,
         verbose=False,
+        pages=name_pages,
     )
     print_page_summary(page_map, students)
     if through_step == 6:
@@ -361,24 +375,61 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         warn_line("No student pages identified. Cannot grade.")
         raise SystemExit(0)
 
+    _will_grade = through_step is None or (
+        isinstance(through_step, int) and through_step >= 8
+    )
+    _grade_render_ex: ThreadPoolExecutor | None = None
+    _grade_pages_future = None
+    if _will_grade:
+        _grade_render_ex = ThreadPoolExecutor(max_workers=1)
+        _grade_pages_future = _grade_render_ex.submit(
+            partial(
+                convert_from_path,
+                str(cleaned_pdf),
+                dpi=instruction.dpi,
+                thread_count=_tc,
+            ),
+        )
+
     # ------------------------------------------------------------------ #
     # Step 7: Exercise detection                                          #
     # ------------------------------------------------------------------ #
     pipeline_step(7, "Questions attempted")
     exercise_map = detect_answered_exercises(
-        cleaned_pdf, page_map, scaffold,
-        dpi=NAME_RECOGNITION_DPI, client=client,
+        cleaned_pdf,
+        page_map,
+        scaffold,
+        dpi=NAME_RECOGNITION_DPI,
+        client=client,
+        pages=name_pages,
     )
     print_exercise_summary(exercise_map)
     if through_step == 7:
+        if _grade_render_ex is not None:
+            _grade_render_ex.shutdown(wait=False, cancel_futures=True)
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
     # Steps 8–9: Grade and print results                                  #
     # ------------------------------------------------------------------ #
     pipeline_step(8, "Marking")
+    grade_pages = None
+    if _grade_pages_future is not None:
+        info_line(f"Awaiting marking render @ {instruction.dpi} DPI …")
+        _t_grade = time.perf_counter()
+        grade_pages = _grade_pages_future.result()
+        ok_line(f"Pages ready · {format_duration(time.perf_counter() - _t_grade)}")
+        _grade_render_ex.shutdown(wait=False)
+        _grade_render_ex = None
+
     results = grade_students(
-        cleaned_pdf, page_map, exercise_map, scaffold, instruction, client=client,
+        cleaned_pdf,
+        page_map,
+        exercise_map,
+        scaffold,
+        instruction,
+        client=client,
+        pages=grade_pages,
     )
     pipeline_step(9, "Results")
     print_results_table(results, scaffold)

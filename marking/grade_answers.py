@@ -203,10 +203,13 @@ def grade_students(
     scaffold: ExamScaffold,
     instruction: TaskInstruction,
     client: Any | None = None,
+    *,
+    pages: list | None = None,
 ) -> list[StudentResult]:
     """Grade all students and return a ``StudentResult`` for each.
 
     If *client* is None it is created via ``KimiProvider.create_client()``.
+    *pages*: optional pre-rendered page images at ``instruction.dpi`` (skips ``convert_from_path``).
     """
     from pdf2image import convert_from_path
 
@@ -221,8 +224,12 @@ def grade_students(
     assignments = _filter_students(page_map, instruction)
 
     from shared.terminal_ui import info_line, tool_line
-    tool_line("grade", f"Rendering pages @ {dpi} DPI …")
-    all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
+
+    if pages is None:
+        tool_line("grade", f"Rendering pages @ {dpi} DPI …")
+        all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
+    else:
+        all_pages = pages
 
     leaves = scaffold.gradable_questions
     mc_questions = [q for q in leaves if q.question_type == "multiple_choice"]

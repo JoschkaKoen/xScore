@@ -86,11 +86,13 @@ def assign_pages(
     name_crop_fraction: float = 0.15,
     *,
     verbose: bool = True,
+    pages: list | None = None,
 ) -> list[PageAssignment]:
     """Return a ``PageAssignment`` for every student whose pages were found.
 
     If *client* is None it is created via ``KimiProvider.create_client()``.
     *verbose*: when False (``grade.py``), log only sparse progress instead of every page.
+    *pages*: optional pre-rendered page images at *dpi* (skips ``convert_from_path``).
     """
     from extraction.ground_truth import fuzzy_match_name
     from pdf2image import convert_from_path
@@ -103,8 +105,9 @@ def assign_pages(
 
     from shared.terminal_ui import info_line, note_line, tool_line
 
-    tool_line("pages", f"Rendering pages @ {dpi} DPI …")
-    pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
+    if pages is None:
+        tool_line("pages", f"Rendering pages @ {dpi} DPI …")
+        pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
     n_pages = len(pages)
     step = max(1, n_pages // 8) if not verbose and n_pages > 1 else 1
 

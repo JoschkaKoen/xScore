@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -92,8 +93,10 @@ def process_pdf(
     from shared.terminal_ui import (
         PROGRESS_TASK_TEXT,
         err_line,
+        format_duration,
         get_console,
         icon,
+        info_line,
         note_line,
         ok_line,
         warn_line,
@@ -130,12 +133,22 @@ def process_pdf(
         c.print(
             f"\n[bold cyan]  {icon('broom')}  Pass 1: blank detection @ {BLANK_DPI} DPI[/]"
         )
-    low_res_pages = convert_from_path(
-        str(input_path),
-        dpi=BLANK_DPI,
-        grayscale=True,
-        thread_count=_tc,
-    )
+        low_res_pages = convert_from_path(
+            str(input_path),
+            dpi=BLANK_DPI,
+            grayscale=True,
+            thread_count=_tc,
+        )
+    else:
+        info_line(f"Blank detection pass ({BLANK_DPI} DPI) …")
+        t_blank = time.perf_counter()
+        low_res_pages = convert_from_path(
+            str(input_path),
+            dpi=BLANK_DPI,
+            grayscale=True,
+            thread_count=_tc,
+        )
+        ok_line(f"Checked · {format_duration(time.perf_counter() - t_blank)}")
     total_pages = len(low_res_pages)
     if verbose:
         c.print(f"  Total pages: {total_pages}")
@@ -165,12 +178,20 @@ def process_pdf(
         c.print(
             f"\n[bold cyan]  {icon('gear')}  Pass 2: raster @ {analysis_dpi} DPI for OSD[/]"
         )
-    hi_res_pages = convert_from_path(
-        str(input_path),
-        dpi=analysis_dpi,
-        grayscale=True,
-        thread_count=_tc,
-    )
+        hi_res_pages = convert_from_path(
+            str(input_path),
+            dpi=analysis_dpi,
+            grayscale=True,
+            thread_count=_tc,
+        )
+    else:
+        info_line(f"Rotation detection pass ({analysis_dpi} DPI) …")
+        hi_res_pages = convert_from_path(
+            str(input_path),
+            dpi=analysis_dpi,
+            grayscale=True,
+            thread_count=_tc,
+        )
 
     num_workers = min(_tc, len(content_page_nums))
     if verbose:

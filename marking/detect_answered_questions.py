@@ -78,10 +78,13 @@ def detect_answered_exercises(
     scaffold: ExamScaffold,
     dpi: int = 200,
     client: Any | None = None,
+    *,
+    pages: list | None = None,
 ) -> dict[str, list[str]]:
     """Return ``{student_name: [question_numbers_attempted]}`` for every student.
 
     If *client* is None it is created via ``KimiProvider.create_client()``.
+    *pages*: optional pre-rendered page images at *dpi* (skips ``convert_from_path``).
     """
     from pdf2image import convert_from_path
 
@@ -95,8 +98,12 @@ def detect_answered_exercises(
     prompt = _build_prompt(question_numbers)
 
     from shared.terminal_ui import tool_line
-    tool_line("detect", f"Rendering pages @ {dpi} DPI …")
-    all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
+
+    if pages is None:
+        tool_line("detect", f"Rendering pages @ {dpi} DPI …")
+        all_pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
+    else:
+        all_pages = pages
 
     result: dict[str, list[str]] = {}
 
