@@ -4,6 +4,7 @@
 
 # Local / generated
 .venv/
+paddle_env/
 __pycache__/
 *.py[cod]
 .DS_Store

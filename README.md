@@ -26,6 +26,10 @@ Install system dependencies:
 | Debian/Ubuntu | `sudo apt install poppler-utils tesseract-ocr` |
 | PDF reports (optional) | `brew install --cask mactex-no-gui` |
 
+**Optional — PaddleOCR and EasyOCR (experimental)**  
+`bash scripts/install_paddleocr.sh` then `source paddle_env/bin/activate`.  
+Not required for normal `xscore.py` use. Installs large ML dependencies (Paddle + PyTorch and models). If `easyocr` fails to install PyTorch, see [PyTorch install](https://pytorch.org/get-started/locally/) for a CPU wheel, then run `pip install easyocr` again inside `paddle_env`.
+
 ---
 
 ## Which tool do I need?
