@@ -1,0 +1,52 @@
+---
+description: Write clean, maintainable code and self-review every change for quality, correctness, and bugs
+alwaysApply: true
+---
+
+# Clean & Maintainable Code
+
+Before finalizing any code change, run through the checklist below mentally and fix what you find.
+
+## Self-Review Checklist (do this before presenting code)
+
+1. **Correctness** — Does the logic handle edge cases (empty input, None, off-by-one, type mismatch)?
+2. **Bugs** — Re-read the diff for typos, wrong variable names, inverted conditions, or missing `return`/`await`.
+3. **Simplicity** — Can any block be replaced by a cleaner built-in, comprehension, or well-named helper?
+4. **Duplication** — Is this logic already somewhere? If so, extract it; don't repeat it.
+5. **Naming** — Do names say *what* the thing is, not *how* it works? (`load_pages` not `do_stuff`).
+6. **Dead code** — Remove unused imports, variables, and commented-out blocks.
+7. **Error handling** — Are failures surfaced clearly? No bare `except: pass`.
+
+## Code Style Rules
+
+- **Small functions**: each function does one thing. If a function is >40 lines, split it.
+- **Early returns**: guard clauses at the top, happy path at the bottom.
+- **No magic numbers**: give constants a name (`MAX_RETRIES = 3`, not `for _ in range(3)`).
+- **Comments only where needed**: explain *why*, never *what* (the code shows the what).
+- **Consistent abstractions**: don't mix high-level orchestration with low-level detail in the same function.
+
+## When Refactoring Existing Code
+
+- Keep the public interface the same unless a change was explicitly requested.
+- Prefer editing the smallest possible region — don't reformat unrelated lines.
+- If you find a pre-existing bug while working nearby, fix it and call it out explicitly.
+
+## Examples
+
+```python
+# BAD — unclear name, magic number, bare except
+def proc(d):
+    try:
+        return d["val"] * 1.15
+    except:
+        pass
+
+# GOOD — named, constant extracted, specific exception
+TAX_RATE = 1.15
+
+def apply_tax(record: dict) -> float | None:
+    try:
+        return record["value"] * TAX_RATE
+    except KeyError:
+        return None
+```
