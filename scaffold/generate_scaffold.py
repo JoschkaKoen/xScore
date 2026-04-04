@@ -377,7 +377,6 @@ def build_scaffold(
     exam_pdf = _find_exam_pdf(folder)
     prepare_scaffold_image_dirs(ad)
 
-    tool_line("scaffold", "Reading exam …")
     questions = parse_exam_pdf(exam_pdf, folder, artifact_dir=ad)
     if not questions:
         raise RuntimeError(
@@ -387,7 +386,6 @@ def build_scaffold(
 
     ans = _find_answer_pdf(folder)
     if ans is not None:
-        tool_line("scaffold", "Reading answer key …")
         amap, table_answers, printed_mc = parse_answer_key_pdf(ans, folder)
         merge_answers_into_scaffold(
             questions,

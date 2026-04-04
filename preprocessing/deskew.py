@@ -597,13 +597,8 @@ def deskew_pdf_raster(
         )
         pages = convert_from_path(str(input_pdf), **_pdf_kw)
     else:
-        info_line("Straightening the scan so each page lines up with the template.")
-        with c.status(
-            "  Loading every page from the PDF …",
-            spinner="dots",
-        ):
+        with c.status("  Loading pages …", spinner="dots"):
             pages = convert_from_path(str(input_pdf), **_pdf_kw)
-        ok_line(f"Loaded {len(pages)} pages.")
     n = len(pages)
     num_workers = min(os.cpu_count() or 4, n)
     if verbose:
@@ -642,14 +637,13 @@ def deskew_pdf_raster(
                 transient=False,
             ) as prog:
                 task_id = prog.add_task(
-                    "Straightening each page …",
+                    "Straightening pages",
                     total=n,
                 )
                 for fut in as_completed(futures):
                     page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
                     results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
                     prog.advance(task_id)
-            ok_line(f"Straightened all {n} pages.")
 
     # Bootstrap IGCSE template from page 0 top half (Tesseract, runs once)
     _phase3 = (
@@ -712,8 +706,6 @@ def deskew_pdf_raster(
 
     if verbose:
         tool_line("deskew", "Saved alignment data (anchors and layout lines).")
-    elif not verbose:
-        ok_line("Located headers and margins on every page.")
 
     _phase4 = (
         c.status(
@@ -742,7 +734,7 @@ def deskew_pdf_raster(
 
     out_label = saved_as if saved_as is not None else output_pdf.name
     if not verbose:
-        ok_line(f"Finished aligning all {n} pages.")
+        ok_line("Done.")
     else:
         ref_ok = sum(
             1

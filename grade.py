@@ -150,9 +150,6 @@ def main() -> None:
             style="blue",
         )
     )
-    c.print()
-    note_line("Saving a plain-text log of this session (no colors).")
-
     try:
         _run(args, timestamp)
     finally:
@@ -166,6 +163,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
 
     from shared.terminal_ui import (
         err_line,
+        get_console,
         info_line,
         note_line,
         ok_line,
@@ -205,12 +203,9 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------ #
     # Step 1: Parse natural language prompt                               #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        1,
-        "Your request",
-        subtitle="Turn your words into grading settings (who, what, resolution).",
-    )
-    instruction = parse_prompt(args.prompt, client=client, dpi_override=args.dpi)
+    pipeline_step(1, "Your request")
+    with get_console().status("  Parsing …", spinner="dots"):
+        instruction = parse_prompt(args.prompt, client=client, dpi_override=args.dpi)
 
     skip_clean_scan = args.skip_clean_scan or instruction.skip_clean_scan
     force_clean_scan = args.force_clean_scan or instruction.force_clean_scan
@@ -226,26 +221,26 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     no_report = args.no_report or instruction.no_report
 
     _task_labels = {
-        "check_answers": "Check full written answers",
-        "check_mc": "Check multiple choice only",
-        "count_marks": "Count marks per student",
-        "build_scaffold": "Build exam structure only",
-        "clean_scan": "Clean the class scan only",
+        "check_answers": "Grade answers",
+        "check_mc": "Multiple choice only",
+        "count_marks": "Count marks",
+        "build_scaffold": "Build structure",
+        "clean_scan": "Clean scan",
     }
     _task_label = _task_labels.get(
         instruction.task_type,
-        instruction.task_type.replace("_", " ").strip() or "Grade this exam",
+        instruction.task_type.replace("_", " ").strip(),
     )
     _sf = instruction.student_filter
     if _sf.mode == "all":
-        _scope = "All students"
+        _scope = "all students"
     elif _sf.mode == "first_n" and _sf.n > 0:
-        _scope = f"First {_sf.n} students on the list"
+        _scope = f"first {_sf.n} students"
     elif _sf.names:
-        _scope = f"{len(_sf.names)} students you named"
+        _scope = f"{len(_sf.names)} named students"
     else:
-        _scope = _sf.mode.replace("_", " ").title()
-    info_line(f"{_task_label}. {_scope}. Scan pages at {instruction.dpi} DPI.")
+        _scope = _sf.mode.replace("_", " ")
+    ok_line(f"{_task_label}  ·  {_scope}  ·  {instruction.dpi} DPI")
 
     if through_step == 1:
         raise SystemExit(0)
@@ -253,11 +248,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------ #
     # Step 2: Find exam folder                                            #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        2,
-        "Exam folder",
-        subtitle="Locate the exam on disk and start a fresh run for this session.",
-    )
+    pipeline_step(2, "Exam folder")
     folder = find_folder(
         instruction_hint=instruction.folder_hint,
         cli_override=args.folder,
@@ -275,33 +266,23 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     # Reports and all derived files for this invocation live in the same run folder.
     run_dir = artifact_dir
-    ok_line("Exam folder located.")
-    info_line(f"This run id is {timestamp} (ties together everything produced now).")
+    ok_line(folder.name)
     if through_step == 2:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
     # Step 3: Read student list                                           #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        3,
-        "Class list",
-        subtitle="Read student names from the roster file in the exam folder.",
-    )
+    pipeline_step(3, "Students")
     students = read_student_list(folder)
-    roster_preview = ", ".join(students[:5]) + (" …" if len(students) > 5 else "")
-    info_line(f"{len(students)} students on the roster ({roster_preview}).")
+    ok_line(f"{len(students)} students on the roster")
     if through_step == 3:
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
     # Step 4: Build exam scaffold                                         #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        4,
-        "Paper and mark scheme",
-        subtitle="Read the official exam PDF and answer key to list every gradable part.",
-    )
+    pipeline_step(4, "Mark scheme")
     if rescaffold:
         for cache_p in (
             artifact_scaffold_cache_path(artifact_dir),
@@ -321,11 +302,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------ #
     # Step 5: Clean scan PDF                                              #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        5,
-        "Class scan",
-        subtitle="Fix page rotation, drop blank sheets, then straighten so boxes line up.",
-    )
+    pipeline_step(5, "Scan")
     if skip_clean_scan:
         cleaned_here = artifact_dir / "cleaned_scan.pdf"
         legacy_cleaned = folder / "cleaned_scan.pdf"
@@ -356,11 +333,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------ #
     # Step 6: Page assignment                                             #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        6,
-        "Pages to students",
-        subtitle="Decide which scanned page belongs to which name.",
-    )
+    pipeline_step(6, "Page assignment")
     from config import NAME_CROP_FRACTION, NAME_RECOGNITION_DPI
 
     page_map = assign_pages(
@@ -382,11 +355,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------ #
     # Step 7: Exercise detection                                          #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        7,
-        "Questions attempted",
-        subtitle="See which questions each student actually wrote on.",
-    )
+    pipeline_step(7, "Questions attempted")
     exercise_map = detect_answered_exercises(
         cleaned_pdf, page_map, scaffold,
         dpi=NAME_RECOGNITION_DPI, client=client,
@@ -398,19 +367,11 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------ #
     # Steps 8–9: Grade and print results                                  #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        8,
-        "Marking",
-        subtitle="Award marks using the model answers and your task settings.",
-    )
+    pipeline_step(8, "Marking")
     results = grade_students(
         cleaned_pdf, page_map, exercise_map, scaffold, instruction, client=client,
     )
-    pipeline_step(
-        9,
-        "Score sheet",
-        subtitle="Show each student’s marks in a table.",
-    )
+    pipeline_step(9, "Results")
     print_results_table(results, scaffold)
     print_grand_summary(results)
     if through_step in (8, 9):
@@ -419,11 +380,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------ #
     # Step 10: Ground truth evaluation (if file exists in exam folder)    #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        10,
-        "Accuracy check",
-        subtitle="If a reference answer list exists, compare extraction to it.",
-    )
+    pipeline_step(10, "Accuracy check")
     eval_data: dict | None = None
     gt_file = find_ground_truth_file(folder)
     if gt_file is not None:
@@ -443,11 +400,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # ------------------------------------------------------------------ #
     # Step 11: PDF report                                                 #
     # ------------------------------------------------------------------ #
-    pipeline_step(
-        11,
-        "Printable report",
-        subtitle="Turn results into a PDF you can file or share.",
-    )
+    pipeline_step(11, "Report")
     if not no_report:
         output_tex = run_dir / "grade_report.tex"
         output_pdf = run_dir / "grade_report.pdf"

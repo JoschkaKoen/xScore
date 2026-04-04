@@ -196,15 +196,8 @@ def process_pdf(
         c.print(Panel(rot_table, border_style="dim cyan"))
 
     else:
-        angle_counts = Counter(rotation_map.values())
-        parts: list[str] = []
-        for angle in sorted(angle_counts):
-            n = angle_counts[angle]
-            if angle == 0:
-                parts.append(f"{n} already upright")
-            else:
-                parts.append(f"{n} rotated")
-        rot_s = ", ".join(parts) if parts else "—"
+        rotated = sum(1 for a in rotation_map.values() if a != 0)
+        rot_s = f"{rotated} rotated" if rotated else "none rotated"
 
     src_pdf = pikepdf.open(str(input_path))
     out_pdf = pikepdf.new()
@@ -235,7 +228,7 @@ def process_pdf(
         ok_line("Passes 1–2 complete (rotate + de-blank).")
         c.print()
     else:
-        _blank_s = f"{len(blank_page_nums)} blank" if blank_page_nums else "none blank"
-        ok_line(
-            f"{len(content_page_nums)}/{total_pages} pages kept ({_blank_s} removed)  ·  {rot_s}"
-        )
+        kept = len(content_page_nums)
+        blanks = len(blank_page_nums)
+        page_s = f"{kept} of {total_pages}" if blanks else str(kept)
+        ok_line(f"{page_s} pages  ·  {rot_s}")
