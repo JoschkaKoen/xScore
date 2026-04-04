@@ -8,6 +8,7 @@ import statistics
 import textwrap
 
 from rich import box
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
@@ -15,6 +16,9 @@ from rich.text import Text
 
 from shared.models import ExamScaffold, PageAssignment, StudentResult
 from shared.terminal_ui import get_console, icon
+
+# Align tables and panels with pipeline status lines (two-space left margin).
+_PAD = (0, 0, 0, 2)
 
 
 def _pct_style(pct: float) -> str:
@@ -123,7 +127,8 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         show_header=True,
         header_style="bold cyan",
         title=(
-            f"  {icon('gear')}  Exam scaffold  —  {len(leaves)} questions, {scaffold.total_marks} marks"
+            f"{icon('gear')}  Questions and model answers  —  "
+            f"{len(leaves)} parts, {scaffold.total_marks} marks"
         ),
         title_style="bold cyan",
         expand=False,
@@ -169,7 +174,7 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         )
 
     c.print()
-    c.print(table)
+    c.print(Padding(table, _PAD))
     c.print()
 
 
@@ -184,7 +189,7 @@ def print_page_summary(page_map: list[PageAssignment], students: list[str]) -> N
         box=box.ROUNDED,
         show_header=True,
         header_style="bold cyan",
-        title=f"{icon('users')}  PAGE ASSIGNMENT  —  {len(page_map)} student(s) identified",
+        title=f"{icon('users')}  Who owns which pages  —  {len(page_map)} students matched",
         title_style="bold cyan",
     )
     table.add_column("Student", min_width=20)
@@ -203,14 +208,19 @@ def print_page_summary(page_map: list[PageAssignment], students: list[str]) -> N
         )
 
     c.print()
-    c.print(Panel(table, border_style="dim cyan"))
+    c.print(Padding(Panel(table, border_style="dim cyan"), _PAD))
 
     not_found = [s for s in students if s not in found_names]
     if not_found:
         c.print()
-        c.print(f"[red]  Students in roster NOT found in scan:[/]")
+        c.print(
+            Padding(
+                Text.from_markup("[red]Students on the roster but not seen in the scan:[/]"),
+                _PAD,
+            )
+        )
         for name in not_found:
-            c.print(f"    – {name}")
+            c.print(Padding(Text(f"  – {name}"), _PAD))
     c.print()
 
 
@@ -225,7 +235,7 @@ def print_exercise_summary(exercise_map: dict[str, list[str]]) -> None:
         box=box.ROUNDED,
         show_header=True,
         header_style="bold cyan",
-        title=f"{icon('search')}  ANSWERED EXERCISES",
+        title=f"{icon('search')}  Questions each student wrote on",
         title_style="bold cyan",
     )
     table.add_column("Student", min_width=20)
@@ -236,7 +246,7 @@ def print_exercise_summary(exercise_map: dict[str, list[str]]) -> None:
         table.add_row(name, q_str)
 
     c.print()
-    c.print(Panel(table, border_style="dim cyan"))
+    c.print(Padding(Panel(table, border_style="dim cyan"), _PAD))
     c.print()
 
 
@@ -248,7 +258,7 @@ def print_exercise_summary(exercise_map: dict[str, list[str]]) -> None:
 def print_results_table(results: list[StudentResult], scaffold: ExamScaffold) -> None:
     c = get_console()
     if not results:
-        c.print("[dim]  No results to display.[/]")
+        c.print(Padding("[dim]No results to display.[/]", _PAD))
         return
 
     q_nums = [q.number for q in scaffold.gradable_questions]
@@ -258,7 +268,7 @@ def print_results_table(results: list[StudentResult], scaffold: ExamScaffold) ->
         box=box.ROUNDED,
         show_header=True,
         header_style="bold cyan",
-        title=f"{icon('chart')}  RESULTS TABLE",
+        title=f"{icon('chart')}  Marks per student",
         title_style="bold cyan",
         show_lines=False,
     )
@@ -279,7 +289,7 @@ def print_results_table(results: list[StudentResult], scaffold: ExamScaffold) ->
         table.add_row(*row_cells)
 
     c.print()
-    c.print(Panel(table, border_style="dim cyan"))
+    c.print(Padding(Panel(table, border_style="dim cyan"), _PAD))
     c.print()
 
 
@@ -299,11 +309,11 @@ def print_evaluation_summary(eval_data: dict, scaffold: ExamScaffold) -> None:
     st_overall = _pct_style(overall_pct)
 
     c.print()
-    c.print(Rule(f"{icon('chart')}  GROUND TRUTH EVALUATION", style="bold cyan"))
+    c.print(Padding(Rule(f"{icon('chart')}  Versus reference answers", style="bold cyan"), _PAD))
     c.print(
-        Text.assemble(
-            "  Overall accuracy: ",
-            (overall_str, st_overall),
+        Padding(
+            Text.assemble("Overall match: ", (overall_str, st_overall)),
+            _PAD,
         )
     )
     c.print()
@@ -337,7 +347,7 @@ def print_evaluation_summary(eval_data: dict, scaffold: ExamScaffold) -> None:
         )
         table.add_row(*cells)
 
-    c.print(Panel(table, border_style="dim cyan"))
+    c.print(Padding(Panel(table, border_style="dim cyan"), _PAD))
     c.print()
 
 
@@ -363,7 +373,7 @@ def print_grand_summary(results: list[StudentResult]) -> None:
         box=box.ROUNDED,
         show_header=True,
         header_style="bold cyan",
-        title=f"{icon('chart')}  CLASS STATISTICS  —  {len(results)} student(s) graded",
+        title=f"{icon('chart')}  Class overview  —  {len(results)} students",
         title_style="bold cyan",
     )
     table.add_column("Metric", style="dim")
@@ -374,5 +384,5 @@ def print_grand_summary(results: list[StudentResult]) -> None:
     table.add_row("Highest", fmt_cell(hi))
     table.add_row("Lowest", fmt_cell(lo))
 
-    c.print(Panel(table, border_style="dim cyan"))
+    c.print(Padding(Panel(table, border_style="dim cyan"), _PAD))
     c.print()

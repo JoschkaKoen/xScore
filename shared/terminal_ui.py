@@ -139,7 +139,12 @@ def pipeline_verbose() -> bool:
     return v.lower() in ("1", "true", "yes", "on")
 
 
-def pipeline_step(readme_step: int, title: str) -> None:
+def pipeline_step(
+    readme_step: int,
+    title: str,
+    *,
+    subtitle: str | None = None,
+) -> None:
     """Print a pipeline step header (compact by default; wide rules if :func:`pipeline_verbose`)."""
     c = get_console()
     label = f"  {icon('step')}  Step {readme_step} — {title}"
@@ -147,9 +152,13 @@ def pipeline_step(readme_step: int, title: str) -> None:
     if pipeline_verbose():
         c.print(Rule(style="dim", characters="═"))
         c.print(f"[bold cyan]{label}[/]")
+        if subtitle:
+            c.print(f"[dim]  {icon('info')}  {subtitle}[/]")
         c.print(Rule(style="dim", characters="═"))
     else:
         c.print(f"[bold cyan]{label}[/]")
+        if subtitle:
+            c.print(f"[dim]  {icon('info')}  {subtitle}[/]")
     sys.stdout.flush()
 
 
@@ -183,7 +192,7 @@ def note_line(message: str) -> None:
 
 
 def tool_line(tool: str, message: str) -> None:
-    """Sub-system tag aligned with other status lines, e.g. ``  [deskew] …``."""
-    tag = f"[{tool}]"
-    get_console().print(f"  [bold magenta]{tag}[/] {message}")
+    """Same layout as :func:`info_line` (subsystem *tool* kept for call-site clarity only)."""
+    _ = tool
+    get_console().print(f"[dim]  {icon('info')}  {message}[/]")
     sys.stdout.flush()
