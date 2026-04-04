@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections import Counter
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -18,7 +18,13 @@ from pdf2image import convert_from_path
 from PIL import Image
 from rich import box
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 
 # ---------------------------------------------------------------------------
@@ -82,6 +88,7 @@ def process_pdf(
 
     from shared.terminal_ui import (
         err_line,
+        format_duration,
         get_console,
         icon,
         note_line,
@@ -161,18 +168,23 @@ def process_pdf(
             executor.submit(_osd_worker, pn, input_str, analysis_dpi): pn
             for pn in content_page_nums
         }
+        t_osd = time.perf_counter()
         with Progress(
-            TextColumn("[cyan]{task.description}"),
-            BarColumn(),
+            TextColumn("  {task.description}"),
+            BarColumn(bar_width=28),
             TaskProgressColumn(),
+            TimeElapsedColumn(),
             console=c,
-            transient=True,
+            transient=False,
         ) as prog:
-            task_id = prog.add_task("OSD rotation", total=len(futures))
+            task_id = prog.add_task("Checking page rotation", total=len(futures))
             for future in as_completed(futures):
                 page_num, angle = future.result()
                 rotation_map[page_num] = angle
                 prog.advance(task_id)
+        ok_line(
+            f"Checking page rotation · {format_duration(time.perf_counter() - t_osd)}"
+        )
 
     if verbose:
         rot_table = Table(

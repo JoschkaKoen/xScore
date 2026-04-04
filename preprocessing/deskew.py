@@ -20,7 +20,7 @@ from __future__ import annotations
 import io
 import json
 import os
-from contextlib import nullcontext
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -573,13 +573,12 @@ def deskew_pdf_raster(
     from rich.progress import (
         BarColumn,
         Progress,
-        SpinnerColumn,
         TaskProgressColumn,
         TextColumn,
         TimeElapsedColumn,
     )
 
-    from shared.terminal_ui import get_console, info_line, ok_line, tool_line
+    from shared.terminal_ui import format_duration, get_console, info_line, ok_line, tool_line
 
     c = get_console()
     _pdf_kw = dict(
@@ -597,8 +596,10 @@ def deskew_pdf_raster(
         )
         pages = convert_from_path(str(input_pdf), **_pdf_kw)
     else:
-        with c.status("  Loading pages …", spinner="dots"):
-            pages = convert_from_path(str(input_pdf), **_pdf_kw)
+        info_line("Loading pages …")
+        t_load = time.perf_counter()
+        pages = convert_from_path(str(input_pdf), **_pdf_kw)
+        ok_line(f"Pages loaded · {format_duration(time.perf_counter() - t_load)}")
     n = len(pages)
     num_workers = min(os.cpu_count() or 4, n)
     if verbose:
@@ -628,6 +629,7 @@ def deskew_pdf_raster(
                 tool_line("deskew", f"    ref-lines (after deskew)  top: {_lines_str(top_lines)}")
                 tool_line("deskew", f"    ref-lines (after deskew)  bot: {_lines_str(bot_lines)}")
         else:
+            t_straight = time.perf_counter()
             with Progress(
                 TextColumn("  {task.description}"),
                 BarColumn(bar_width=28),
@@ -644,39 +646,41 @@ def deskew_pdf_raster(
                     page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
                     results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
                     prog.advance(task_id)
+            ok_line(
+                f"Straightening pages · {format_duration(time.perf_counter() - t_straight)}"
+            )
 
     # Bootstrap IGCSE template from page 0 top half (Tesseract, runs once)
-    _phase3 = (
-        c.status(
-            "  Finding printed headers and margins …",
-            spinner="dots",
-        )
-        if not verbose
-        else nullcontext()
-    )
-    with _phase3:
-        if verbose:
-            tool_line("deskew", "Extracting IGCSE template from page 1 …")
-        page0_gray = np.array(results[0][0].convert("L"))
-        p0_mid = page0_gray.shape[0] // 2
-        igcse_template = extract_igcse_template(page0_gray[:p0_mid, :], verbose=verbose)
+    if verbose:
+        tool_line("deskew", "Extracting IGCSE template from page 1 …")
+    elif not verbose:
+        info_line("Finding headers and margins …")
+        t_hdr = time.perf_counter()
 
-        # Detect IGCSE anchors on all pages (fast template matching, serial)
+    page0_gray = np.array(results[0][0].convert("L"))
+    p0_mid = page0_gray.shape[0] // 2
+    igcse_template = extract_igcse_template(page0_gray[:p0_mid, :], verbose=verbose)
+
+    # Detect IGCSE anchors on all pages (fast template matching, serial)
+    if verbose:
+        tool_line("deskew", "Detecting IGCSE anchors …")
+    page_anchors: dict[int, dict[str, AnchorPoint | None]] = {}
+    for i in range(n):
+        page_gray = np.array(results[i][0].convert("L"))
+        p_mid = page_gray.shape[0] // 2
+        tl, tr = detect_igcse_anchors(page_gray[:p_mid, :], igcse_template)
+        bl, br = detect_igcse_anchors(page_gray[p_mid:, :], igcse_template)
+        page_anchors[i] = {"top_left": tl, "top_right": tr, "bot_left": bl, "bot_right": br}
         if verbose:
-            tool_line("deskew", "Detecting IGCSE anchors …")
-        page_anchors: dict[int, dict[str, AnchorPoint | None]] = {}
-        for i in range(n):
-            page_gray = np.array(results[i][0].convert("L"))
-            p_mid = page_gray.shape[0] // 2
-            tl, tr = detect_igcse_anchors(page_gray[:p_mid, :], igcse_template)
-            bl, br = detect_igcse_anchors(page_gray[p_mid:, :], igcse_template)
-            page_anchors[i] = {"top_left": tl, "top_right": tr, "bot_left": bl, "bot_right": br}
-            if verbose:
-                tool_line(
-                    "deskew",
-                    f"  page {i + 1:>3} anchors:"
-                    f"  TL={tl}  TR={tr}  BL={bl}  BR={br}",
-                )
+            tool_line(
+                "deskew",
+                f"  page {i + 1:>3} anchors:"
+                f"  TL={tl}  TR={tr}  BL={bl}  BR={br}",
+            )
+
+    if not verbose:
+        ok_line(f"Headers and margins · {format_duration(time.perf_counter() - t_hdr)}")
+
     # Build sidecar JSON (ordered by page index)
     def _anc_dict(a: AnchorPoint | None) -> dict | None:
         return asdict(a) if a is not None else None
@@ -707,34 +711,28 @@ def deskew_pdf_raster(
     if verbose:
         tool_line("deskew", "Saved alignment data (anchors and layout lines).")
 
-    _phase4 = (
-        c.status(
-            "  Writing the cleaned scan …",
-            spinner="dots",
-        )
-        if not verbose
-        else nullcontext()
-    )
-    with _phase4:
-        doc = fitz.open()
-        for i in range(n):
-            pil_img, *_ = results[i]
-            buf = io.BytesIO()
-            pil_img.save(buf, format="PNG")
-            png_bytes = buf.getvalue()
-
-            w_px, h_px = pil_img.size
-            pt_per_px = 72.0 / dpi
-            page = doc.new_page(width=w_px * pt_per_px, height=h_px * pt_per_px)
-            rect = fitz.Rect(0, 0, w_px * pt_per_px, h_px * pt_per_px)
-            page.insert_image(rect, stream=png_bytes)
-
-        doc.save(str(output_pdf), deflate=True)
-        doc.close()
-
-    out_label = saved_as if saved_as is not None else output_pdf.name
     if not verbose:
-        ok_line("Done.")
+        info_line("Writing cleaned scan …")
+        t_write = time.perf_counter()
+
+    doc = fitz.open()
+    for i in range(n):
+        pil_img, *_ = results[i]
+        buf = io.BytesIO()
+        pil_img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        w_px, h_px = pil_img.size
+        pt_per_px = 72.0 / dpi
+        page = doc.new_page(width=w_px * pt_per_px, height=h_px * pt_per_px)
+        rect = fitz.Rect(0, 0, w_px * pt_per_px, h_px * pt_per_px)
+        page.insert_image(rect, stream=png_bytes)
+
+    doc.save(str(output_pdf), deflate=True)
+    doc.close()
+
+    if not verbose:
+        ok_line(f"Saved scan · {format_duration(time.perf_counter() - t_write)}")
     else:
         ref_ok = sum(
             1

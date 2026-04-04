@@ -29,6 +29,7 @@ import argparse
 import datetime
 import re
 import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -163,7 +164,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
 
     from shared.terminal_ui import (
         err_line,
-        get_console,
+        format_duration,
         info_line,
         note_line,
         ok_line,
@@ -204,8 +205,10 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # Step 1: Parse natural language prompt                               #
     # ------------------------------------------------------------------ #
     pipeline_step(1, "Your request")
-    with get_console().status("  Parsing …", spinner="dots"):
-        instruction = parse_prompt(args.prompt, client=client, dpi_override=args.dpi)
+    info_line("Parsing …")
+    _t_parse = time.perf_counter()
+    instruction = parse_prompt(args.prompt, client=client, dpi_override=args.dpi)
+    _parse_elapsed = time.perf_counter() - _t_parse
 
     skip_clean_scan = args.skip_clean_scan or instruction.skip_clean_scan
     force_clean_scan = args.force_clean_scan or instruction.force_clean_scan
@@ -240,7 +243,10 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         _scope = f"{len(_sf.names)} named students"
     else:
         _scope = _sf.mode.replace("_", " ")
-    ok_line(f"{_task_label}  ·  {_scope}  ·  {instruction.dpi} DPI")
+    ok_line(
+        f"{_task_label}  ·  {_scope}  ·  {instruction.dpi} DPI  ·  "
+        f"{format_duration(_parse_elapsed)}"
+    )
 
     if through_step == 1:
         raise SystemExit(0)

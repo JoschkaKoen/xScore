@@ -108,6 +108,21 @@ def rule(char: str = "═", width: int = 60) -> str:
     return paint(line, DIM) if use_color() else line
 
 
+def format_duration(seconds: float) -> str:
+    """Short duration for CLI (e.g. ``3.1s``, ``1m 5s``)."""
+    if seconds < 0:
+        seconds = 0.0
+    if seconds < 10:
+        return f"{seconds:.1f}s"
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    m, s = divmod(int(round(seconds)), 60)
+    if m < 60:
+        return f"{m}m {s}s"
+    h, m = divmod(m, 60)
+    return f"{h}h {m}m {s}s"
+
+
 def get_console() -> Console:
     """Console writing to current ``sys.stdout`` (works with ``grade.py`` tee)."""
     uc = use_color()
