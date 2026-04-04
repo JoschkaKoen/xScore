@@ -130,6 +130,11 @@ def _best_angle_projection_variance(
 def get_deskew_angle(gray: np.ndarray) -> float:
     """Detect the skew angle of *gray* via vertical-projection variance.
 
+    This is **not** printed vertical ruling-line detection — it only scores how
+    vertical ink aligns at each trial angle to pick the deskew rotation.
+    Ruling lines are found later by :func:`detect_reference_lines` on the
+    **deskewed** half.
+
     Two-stage sweep: a **coarse** pass (0.1° steps) on a 1/4-scale Otsu proxy for
     speed, then a **fine** pass (0.01° steps) on full-resolution Otsu within
     ± ``_SWEEP_FINE_HALF``° of the coarse winner so 0.01° accuracy matches
@@ -456,12 +461,15 @@ def deskew_page_halves(
     top = page_gray[:mid, :]
     bot = page_gray[mid:, :]
 
+    # 1) Estimate rotation per half (projection variance — not ruling-line geometry).
     top_angle = get_deskew_angle(top)
     bot_angle = get_deskew_angle(bot)
 
+    # 2) Apply angular deskew before any morphological ruling-line detection.
     top_fixed = deskew_image(top, top_angle)
     bot_fixed = deskew_image(bot, bot_angle)
 
+    # 3) Vertical ruling lines: only on straightened halves.
     top_lines = detect_reference_lines(top_fixed)
     bot_lines = detect_reference_lines(bot_fixed)
 
@@ -574,7 +582,8 @@ def deskew_pdf_raster(
         )
     else:
         progress_line(
-            "Deskew: rasterize → per-half skew → vertical ref-lines → IGCSE anchors → PDF (slow) …",
+            "Deskew: rasterize PDF → angular deskew per half → vertical ref-lines on deskewed "
+            "halves → IGCSE anchors → write PDF (slow) …",
         )
     pages = convert_from_path(
         str(input_pdf),
@@ -595,17 +604,25 @@ def deskew_pdf_raster(
             for i in range(n)
         }
         if verbose:
+            tool_line(
+                "deskew",
+                "Starting per-page pipeline: (1) angular deskew each half  "
+                "(2) rotate  (3) vertical ruling lines on deskewed halves …",
+            )
             for fut in as_completed(futures):
                 page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
                 results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
                 tool_line(
                     "deskew",
-                    f"  page {page_idx + 1:>3}/{n}"
-                    f"  top={top_angle:+.2f}°  bot={bot_angle:+.2f}°",
+                    f"  page {page_idx + 1:>3}/{n}  deskew angles  "
+                    f"top={top_angle:+.2f}°  bot={bot_angle:+.2f}°",
                 )
-                tool_line("deskew", f"    top lines: {_lines_str(top_lines)}")
-                tool_line("deskew", f"    bot lines: {_lines_str(bot_lines)}")
+                tool_line("deskew", f"    ref-lines (after deskew)  top: {_lines_str(top_lines)}")
+                tool_line("deskew", f"    ref-lines (after deskew)  bot: {_lines_str(bot_lines)}")
         else:
+            progress_line(
+                "Angular deskew + vertical ref-lines (per page, parallel) …",
+            )
             with Progress(
                 TextColumn("[cyan]{task.description}"),
                 BarColumn(),
@@ -613,7 +630,7 @@ def deskew_pdf_raster(
                 console=get_console(),
                 transient=True,
             ) as prog:
-                task_id = prog.add_task("Deskew pages", total=n)
+                task_id = prog.add_task("Angular deskew → ref-lines", total=n)
                 for fut in as_completed(futures):
                     page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
                     results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
