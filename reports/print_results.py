@@ -123,8 +123,7 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         show_header=True,
         header_style="bold cyan",
         title=(
-            f"{icon('gear')}  EXAM SCAFFOLD  —  {len(scaffold.questions)} top-level, "
-            f"{len(leaves)} gradable parts, {scaffold.total_marks} total marks"
+            f"{icon('gear')}  Exam scaffold  —  {len(leaves)} questions, {scaffold.total_marks} marks"
         ),
         title_style="bold cyan",
         expand=False,

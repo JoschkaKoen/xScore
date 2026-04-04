@@ -11,5 +11,6 @@ All CLI/script output must be human-readable by default — never dump raw JSON,
 - Use tables for list/tabular data
 - Use color sparingly for success/error/warnings
 - Show progress indicators for long-running operations
+- Use clear simple English in terminal output and not technical terminology 
 
 **Python**: use `rich` (`Console`, `Table`, `Panel`, `Progress`). Always import and use it for all output.

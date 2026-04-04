@@ -202,13 +202,10 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         err_line("Set KIMI_API_KEY in your .env file or environment.")
         raise SystemExit(1)
 
-    ok_line("Kimi API client ready.")
-
     # ------------------------------------------------------------------ #
     # Step 1: Parse natural language prompt                               #
     # ------------------------------------------------------------------ #
     pipeline_step(1, "Parse natural language prompt")
-    info_line(f"Prompt: {args.prompt!r}")
     instruction = parse_prompt(args.prompt, client=client, dpi_override=args.dpi)
 
     skip_clean_scan = args.skip_clean_scan or instruction.skip_clean_scan
@@ -224,27 +221,17 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     )
     no_report = args.no_report or instruction.no_report
 
-    note_line(
-        f"Task: {instruction.task_type}  |  "
-        f"Students: {instruction.student_filter.mode}  |  "
-        f"DPI: {instruction.dpi}"
+    _task_label = instruction.task_type.replace("_", " ")
+    _students_label = (
+        f"{len(instruction.student_filter.names)} students"
+        if instruction.student_filter.mode == "named"
+        else instruction.student_filter.mode
     )
-    _flag_bits = [
-        x
-        for x in (
-            "skip_clean_scan" if skip_clean_scan else None,
-            "force_clean_scan" if force_clean_scan else None,
-            "rescaffold" if rescaffold else None,
-            f"through_step={through_step}" if through_step is not None else None,
-            "no_report" if no_report else None,
-        )
-        if x
-    ]
-    if _flag_bits:
-        note_line("Effective flags: " + ", ".join(_flag_bits))
+    info_line(f"{_task_label}  ·  {_students_label}  ·  {instruction.dpi} DPI")
+    if through_step is not None:
+        info_line(f"Stopping after step {through_step}")
 
     if through_step == 1:
-        info_line("Stopping after step 1 (--through-step).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -256,7 +243,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         cli_override=args.folder,
         ai_folder_path=None if args.folder else instruction.folder_path,
     )
-    note_line(f"{folder}")
+    note_line(f"Exam: {folder.name}")
 
     stem = folder.name.replace(" ", "_")
     exam_output_root = Path("output") / stem
@@ -269,10 +256,8 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     # Reports and all derived files for this invocation live in the same run folder.
     run_dir = artifact_dir
-    note_line(f"Exam output root: {exam_output_root}")
-    note_line(f"This run (all artifacts): {artifact_dir}")
+    note_line(f"Results folder: {artifact_dir}")
     if through_step == 2:
-        info_line("Stopping after step 2 (--through-step).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -283,7 +268,6 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     roster_preview = ", ".join(students[:5]) + (" …" if len(students) > 5 else "")
     note_line(f"{len(students)} students — {roster_preview}")
     if through_step == 3:
-        info_line("Stopping after step 3 (--through-step).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -304,7 +288,6 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     scaffold = build_scaffold(folder, client=client, artifact_dir=artifact_dir)
     print_scaffold_summary(scaffold)
     if through_step == 4:
-        info_line("Stopping after step 4 (--through-step).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -336,7 +319,6 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
             artifact_dir=artifact_dir,
         )
     if through_step == 5:
-        info_line("Stopping after step 5 (--through-step).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -355,9 +337,6 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     )
     print_page_summary(page_map, students)
     if through_step == 6:
-        proj = cleaned_pdf.with_name(f"{cleaned_pdf.stem}_projected_boxes.pdf")
-        info_line("Stopping after step 6 (--through-step).")
-        note_line(f"Projected overlay (if any): {proj.name}")
         raise SystemExit(0)
 
     if not page_map:
@@ -374,7 +353,6 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     )
     print_exercise_summary(exercise_map)
     if through_step == 7:
-        info_line("Stopping after step 7 (--through-step).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -388,7 +366,6 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     print_results_table(results, scaffold)
     print_grand_summary(results)
     if through_step in (8, 9):
-        info_line(f"Stopping after step {through_step} (--through-step).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -409,7 +386,6 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         info_line("No ground_truth file — skipped (add ground_truth.txt to enable).")
 
     if through_step == 10:
-        info_line("Stopping after step 10 (--through-step).")
         raise SystemExit(0)
 
     # ------------------------------------------------------------------ #
@@ -432,7 +408,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     else:
         info_line("no_report: skipping LaTeX/PDF.")
     if through_step == 11:
-        ok_line("Full pipeline complete (--through-step 11).")
+        ok_line("Pipeline complete.")
         raise SystemExit(0)
 
     ok_line("Grading pipeline finished.")

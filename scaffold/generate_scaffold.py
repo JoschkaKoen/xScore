@@ -377,7 +377,7 @@ def build_scaffold(
     exam_pdf = _find_exam_pdf(folder)
     prepare_scaffold_image_dirs(ad)
 
-    tool_line("scaffold", f"Parsing exam PDF (vector): {exam_pdf.name} …")
+    tool_line("scaffold", f"Reading exam: {exam_pdf.name} …")
     questions = parse_exam_pdf(exam_pdf, folder, artifact_dir=ad)
     if not questions:
         raise RuntimeError(
@@ -387,7 +387,7 @@ def build_scaffold(
 
     ans = _find_answer_pdf(folder)
     if ans is not None:
-        tool_line("scaffold", f"Parsing answer key PDF (vector): {ans.name} …")
+        tool_line("scaffold", f"Reading answer key: {ans.name} …")
         amap, table_answers, printed_mc = parse_answer_key_pdf(ans, folder)
         merge_answers_into_scaffold(
             questions,
@@ -437,11 +437,6 @@ def build_scaffold(
     )
     tool_line(
         "scaffold",
-        f"Scaffold built: {len(questions)} top-level questions, "
-        f"{len(leaves)} gradable parts, {total_marks} total marks.",
-    )
-    tool_line(
-        "scaffold",
-        f"Bounding-box overlay: {out_pdf.name} ({n_rects} rectangles on {n_pages} page(s)).",
+        f"{len(leaves)} questions loaded · {total_marks} marks total",
     )
     return scaffold

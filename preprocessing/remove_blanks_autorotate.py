@@ -236,7 +236,7 @@ def process_pdf(
         ok_line("Passes 1–2 complete (rotate + de-blank).")
         c.print()
     else:
+        _blank_s = f"{len(blank_page_nums)} blank" if blank_page_nums else "none blank"
         ok_line(
-            f"Prep: {len(content_page_nums)}/{total_pages} pages kept "
-            f"({len(blank_page_nums)} blank removed) · {rot_s} → {output_path.name}"
+            f"{len(content_page_nums)}/{total_pages} pages kept ({_blank_s} removed)  ·  {rot_s}"
         )

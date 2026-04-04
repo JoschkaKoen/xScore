@@ -559,11 +559,7 @@ def overlay_projected_scaffold_on_scan_pdf(
         save_path.replace(output_pdf)
 
     if verbose:
-        tool_line("overlay", f"Saved → {output_pdf}")
-    else:
-        ok_line(
-            f"Scaffold overlay: {total_rects} boxes / {n_overlay} pages → {output_pdf.name}",
-        )
+        ok_line(f"Overlay: {total_rects} boxes across {n_overlay} pages → {output_pdf.name}")
     return output_pdf
 
 

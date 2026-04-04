@@ -5,6 +5,7 @@ alwaysApply: true
 
 # Human-Readable Communication
 
+- Explain what you did in simple and easy to read language instead of just referencing method names in long convoluted explanations
 - Lead with the answer. Context and caveats come after.
 - Plain English. No jargon unless already introduced.
 - Short sentences. Use bullets or numbered steps for anything multi-part.
