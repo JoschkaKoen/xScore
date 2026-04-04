@@ -41,6 +41,48 @@ def extract_answers_output_dir(
     return Path(output_base) / "extract_answers" / safe_path_stem(pdf_stem)
 
 
+CLEANED_SCAN_PDF = "cleaned_scan.pdf"
+
+
+def find_latest_cleaned_scan(
+    exam_folder: Path,
+    output_base: str | Path = "output",
+) -> Path | None:
+    """Return the newest ``cleaned_scan.pdf`` among known layouts, or ``None``.
+
+    Searches (all must exist as files to be candidates):
+
+    - ``<output_base>/<safe_stem>/CLEANED_SCAN_PDF`` (flat under exam output stem)
+    - ``<output_base>/<safe_stem>/*/CLEANED_SCAN_PDF`` (per-run folders from xscore)
+    - ``<exam_folder>/CLEANED_SCAN_PDF`` (legacy next to exam inputs)
+
+    *safe_stem* is ``exam_folder.name`` with spaces replaced by underscores.
+    The winner is the path with the largest ``st_mtime``.
+    """
+    stem = exam_folder.name.replace(" ", "_")
+    base = Path(output_base) / stem
+    name = CLEANED_SCAN_PDF
+    candidates: list[Path] = []
+
+    flat = base / name
+    if flat.is_file():
+        candidates.append(flat)
+
+    if base.is_dir():
+        for p in base.glob(f"*/{name}"):
+            if p.is_file():
+                candidates.append(p)
+
+    legacy = exam_folder / name
+    if legacy.is_file():
+        candidates.append(legacy)
+
+    if not candidates:
+        return None
+
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
 def find_scaffold_cache_file(
     exam_folder: Path, output_base: str | Path = "output"
 ) -> Path | None:
