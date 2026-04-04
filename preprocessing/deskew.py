@@ -636,7 +636,6 @@ def deskew_pdf_raster(
                 tool_line("deskew", f"    ref-lines (after deskew)  top: {_lines_str(top_lines)}")
                 tool_line("deskew", f"    ref-lines (after deskew)  bot: {_lines_str(bot_lines)}")
         else:
-            t_straight = time.perf_counter()
             with Progress(
                 TextColumn(PROGRESS_TASK_TEXT),
                 BarColumn(bar_width=28),
@@ -653,9 +652,6 @@ def deskew_pdf_raster(
                     page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
                     results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
                     prog.advance(task_id)
-            ok_line(
-                f"Straightening pages · {format_duration(time.perf_counter() - t_straight)}"
-            )
 
     # Bootstrap IGCSE template from page 0 top half (Tesseract, runs once)
     if verbose:

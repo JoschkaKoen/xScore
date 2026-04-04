@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -89,7 +88,6 @@ def process_pdf(
     from shared.terminal_ui import (
         PROGRESS_TASK_TEXT,
         err_line,
-        format_duration,
         get_console,
         icon,
         note_line,
@@ -169,7 +167,6 @@ def process_pdf(
             executor.submit(_osd_worker, pn, input_str, analysis_dpi): pn
             for pn in content_page_nums
         }
-        t_osd = time.perf_counter()
         with Progress(
             TextColumn(PROGRESS_TASK_TEXT),
             BarColumn(bar_width=28),
@@ -183,9 +180,6 @@ def process_pdf(
                 page_num, angle = future.result()
                 rotation_map[page_num] = angle
                 prog.advance(task_id)
-        ok_line(
-            f"Checking page rotation · {format_duration(time.perf_counter() - t_osd)}"
-        )
 
     if verbose:
         rot_table = Table(
