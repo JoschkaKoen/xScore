@@ -90,7 +90,6 @@ def _rejoin_lonely_bullet_wrap_lines(lines: list[str]) -> list[str]:
     while i < len(lines):
         line = lines[i]
         if line == "":
-            out.append(line)
             i += 1
             continue
         st = line.strip()
@@ -132,6 +131,7 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         ),
         title_style="bold cyan",
         expand=False,
+        padding=0,
     )
     table.add_column("Question", width=w_q, overflow="ellipsis")
     table.add_column("Type", width=w_ty, overflow="ellipsis")
@@ -149,8 +149,6 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         for para in raw.split("\n"):
             p = para.strip()
             if not p:
-                if wrapped_lines and wrapped_lines[-1] != "":
-                    wrapped_lines.append("")
                 continue
             chunk = textwrap.wrap(
                 p,
@@ -158,9 +156,11 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
                 break_long_words=True,
                 break_on_hyphens=True,
             )
-            wrapped_lines.extend(chunk if chunk else [""])
+            if chunk:
+                wrapped_lines.extend(chunk)
 
         wrapped_lines = _rejoin_lonely_bullet_wrap_lines(wrapped_lines)
+        wrapped_lines = [ln for ln in wrapped_lines if ln.strip()]
 
         if not wrapped_lines:
             wrapped_lines = ["–"]
