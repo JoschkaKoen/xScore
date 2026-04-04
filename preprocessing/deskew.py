@@ -5,11 +5,10 @@ introduces independent sub-degree skew in each half, so angle detection and
 correction are performed **per half** and the halves are reassembled.
 
 The sidecar ``<stem>_anchors.json`` (next to the output PDF by default, or set
-via ``reflines_sidecar``) stores **IGCSE header anchor** positions per page for
-projection onto scans.  Legacy ``top`` / ``bot`` vertical-refline arrays are
-written as empty lists; the detector :func:`detect_reference_lines` is kept in
-the module but not invoked in the pipeline.  Older runs may still have
-``<stem>_reflines.json``; :func:`resolve_deskew_sidecar` finds either.  *input_pdf*
+via ``reflines_sidecar``) stores **IGCSE header anchor** positions per page and
+**vertical ruling lines** per half (``top`` / ``bot`` arrays from
+:func:`detect_reference_lines`, run after per-half deskew).  Older runs may still
+have ``<stem>_reflines.json``; :func:`resolve_deskew_sidecar` finds either.  *input_pdf*
 and *output_pdf* must differ — the source file is never overwritten in-place.
 
 Empirical data from 34 pages of a Space Physics scan (300 DPI, 68 half-pages):
@@ -445,8 +444,8 @@ def deskew_page_halves(
 ) -> tuple[np.ndarray, float, float, list[ReferenceLine], list[ReferenceLine]]:
     """Split *page_gray* at the vertical midpoint, deskew each half separately.
 
-    Vertical ruling-line detection is not run (``top_lines`` / ``bot_lines`` are
-    empty); see :func:`detect_reference_lines` if you need that logic elsewhere.
+    After deskew, runs :func:`detect_reference_lines` on each half to locate the
+    printed vertical ruling lines (typically three per half).
 
     Returns:
         (deskewed_full_page, top_angle, bot_angle, top_lines, bot_lines)
@@ -463,8 +462,8 @@ def deskew_page_halves(
     top_fixed = deskew_image(top, top_angle)
     bot_fixed = deskew_image(bot, bot_angle)
 
-    top_lines: list[ReferenceLine] = []
-    bot_lines: list[ReferenceLine] = []
+    top_lines = detect_reference_lines(top_fixed)
+    bot_lines = detect_reference_lines(bot_fixed)
 
     return np.vstack([top_fixed, bot_fixed]), top_angle, bot_angle, top_lines, bot_lines
 
@@ -575,7 +574,7 @@ def deskew_pdf_raster(
         )
     else:
         progress_line(
-            "Deskew: rasterize → per-half skew → IGCSE anchors → PDF (slow) …",
+            "Deskew: rasterize → per-half skew → vertical ref-lines → IGCSE anchors → PDF (slow) …",
         )
     pages = convert_from_path(
         str(input_pdf),
@@ -671,7 +670,10 @@ def deskew_pdf_raster(
     sidecar_path.write_text(json.dumps(reflines_data, indent=2))
 
     if verbose:
-        tool_line("deskew", f"Anchors sidecar → {sidecar_path.name}")
+        tool_line(
+            "deskew",
+            f"Sidecar (anchors + vertical ref-lines) → {sidecar_path.name}",
+        )
 
     doc = fitz.open()
     for i in range(n):
@@ -693,14 +695,28 @@ def deskew_pdf_raster(
     if not verbose:
         tops = [results[i][1] for i in range(n)]
         bots = [results[i][2] for i in range(n)]
+        ref_ok = sum(
+            1
+            for i in range(n)
+            if len(results[i][3]) == 3 and len(results[i][4]) == 3
+        )
         ok_line(
             f"Deskew: {n}p @ {dpi} DPI · "
             f"skew top [{min(tops):+.2f}…{max(tops):+.2f}]° "
             f"bot [{min(bots):+.2f}…{max(bots):+.2f}]° · "
-            f"anchors {sidecar_path.name} · PDF → {out_label}"
+            f"vertical ref-lines 3+3 on {ref_ok}/{n} pages · "
+            f"sidecar {sidecar_path.name} · PDF → {out_label}"
         )
     else:
-        ok_line(f"Deskew saved → {output_pdf.name}")
+        ref_ok = sum(
+            1
+            for i in range(n)
+            if len(results[i][3]) == 3 and len(results[i][4]) == 3
+        )
+        ok_line(
+            f"Deskew saved → {output_pdf.name} · "
+            f"vertical ref-lines 3+3 on {ref_ok}/{n} pages"
+        )
     return output_pdf
 
 

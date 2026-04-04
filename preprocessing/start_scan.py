@@ -29,8 +29,8 @@ def cleanup_pdf(
 
     Pass 1: blank page removal (72 DPI)
     Pass 2: OSD 90-degree rotation (pikepdf lossless)
-    Pass 3: per-half fine deskew via projection variance (rasterised at *dpi*)
-            — only when ``deskew=True`` (default).
+    Pass 3: per-half fine deskew, vertical ruling-line detection per half, IGCSE anchors,
+            sidecar JSON — only when ``deskew=True`` (default); rasterised at *dpi*.
 
     Raises ``FileNotFoundError`` if no scan PDF is found.
     """
