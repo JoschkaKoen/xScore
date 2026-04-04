@@ -27,9 +27,10 @@ def cleanup_pdf(
     Skips processing if the output already exists and is newer than the source,
     unless *force_clean_scan* is true (output and matching anchor sidecars are removed first).
 
-    Pass 1: blank removal + OSD rotation — two Poppler rasters (72 DPI blanks, then *dpi*
-            for Tesseract OSD; see :mod:`preprocessing.remove_blanks_autorotate`), then
-            lossless pikepdf write.
+    Pass 1: blank removal + page rotation via :mod:`preprocessing.remove_blanks_autorotate`:
+            one Poppler raster at 72 DPI for blanks; by default PDF ``/Rotate`` per page is
+            preserved (no Tesseract). Set ``SCAN_USE_TESSERACT_ROTATION=1`` for a second
+            raster at *dpi* plus Tesseract OSD, then lossless pikepdf write.
     Pass 2: per-half fine deskew, vertical ruling-line detection per half, IGCSE anchors,
             sidecar JSON — only when ``deskew=True`` (default); rasterised at *dpi* for this pass.
 
@@ -40,6 +41,7 @@ def cleanup_pdf(
     ad = artifact_dir or exam_artifact_dir(folder, output_base)
     ad.mkdir(parents=True, exist_ok=True)
 
+    from config import SCAN_USE_TESSERACT_ROTATION
     from preprocessing.remove_blanks_autorotate import process_pdf
 
     output = ad / "cleaned_scan.pdf"
@@ -106,12 +108,13 @@ def cleanup_pdf(
         return output
 
     tool_line("start_scan", "Detect empty pages and page rotation …")
-    # Pass 2 inside process_pdf uses *dpi* for OSD (orientation_conf); deskew uses the same *dpi*.
+    # When SCAN_USE_TESSERACT_ROTATION is set, process_pdf rasterises at *dpi* for OSD; deskew uses the same *dpi*.
     process_pdf(
         input_path=str(match),
         output_path=str(output),
         analysis_dpi=dpi,
         verbose=False,
+        use_tesseract_rotation=SCAN_USE_TESSERACT_ROTATION,
     )
 
     if deskew:

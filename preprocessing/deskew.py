@@ -543,7 +543,8 @@ def deskew_pdf_raster(
     to a sibling temp path and ``Path.replace`` afterward.
 
     Args:
-        input_pdf: Source PDF (already OSD-rotated by :func:`preprocessing.remove_blanks_autorotate.process_pdf`).
+        input_pdf: Source PDF after :func:`preprocessing.remove_blanks_autorotate.process_pdf`
+            (blanks removed; rotation from PDF ``/Rotate`` and optionally Tesseract OSD).
         output_pdf: Destination PDF (must not resolve to the same path as *input_pdf*).
         dpi: Render/output DPI.
         reflines_sidecar: Optional path for the anchor sidecar JSON (IGCSE anchors

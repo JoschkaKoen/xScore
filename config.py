@@ -83,6 +83,12 @@ _csef = os.getenv("CLEANED_SCAN_EMBED_FORMAT", "jpeg").strip().lower()
 CLEANED_SCAN_EMBED_FORMAT: str = _csef if _csef in ("jpeg", "png") else "jpeg"
 CLEANED_SCAN_JPEG_QUALITY = int(os.getenv("CLEANED_SCAN_JPEG_QUALITY", "95"))
 
+# Class scan rotation (see preprocessing/remove_blanks_autorotate.py).
+# False (default): trust PDF /Rotate per page; only one Poppler raster (72 DPI) for blank detection.
+# True: add a full-DPI raster + Tesseract OSD for extra rotation hints (slow; rare mis-scanned PDFs).
+_scan_tess_rot = os.getenv("SCAN_USE_TESSERACT_ROTATION", "").strip().lower()
+SCAN_USE_TESSERACT_ROTATION: bool = _scan_tess_rot in ("1", "true", "yes", "on")
+
 # Fraction of page to crop from top. 0.6 = top 60% of page.
 # The answer section is typically in the top half of the page.
 CROP_TOP_FRACTION = 0.6

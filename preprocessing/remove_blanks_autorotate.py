@@ -1,4 +1,8 @@
-"""Rotate scanned exam PDFs upright (Tesseract OSD) and drop blank pages (pikepdf).
+"""Blank-page removal and page rotation for class-scan PDFs (pikepdf).
+
+By default rotation follows each page's PDF ``/Rotate`` metadata (scanner output).
+Optional Tesseract OSD can add an extra CCW adjustment on top (slow); see
+``config.SCAN_USE_TESSERACT_ROTATION``.
 
 Used by :mod:`preprocessing.start_scan` before fine deskew. Formerly ``autograder.py``.
 """
@@ -8,12 +12,12 @@ from __future__ import annotations
 import os
 import sys
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
 import pikepdf
-import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
 from rich import box
@@ -34,15 +38,26 @@ from shared.terminal_ui import CompactElapsedColumn
 # ---------------------------------------------------------------------------
 
 # Default OSD raster DPI when process_pdf is called without analysis_dpi (standalone / tests).
-# Pipeline callers must pass pipeline dpi: low DPI yields orientation_conf < 2.0 and skipped rotation.
+# Pipeline callers should pass pipeline dpi when Tesseract rotation is enabled: low DPI yields
+# orientation_conf < 2.0 and skipped rotation.
 ANALYSIS_DPI = 150
-BLANK_DPI = 72  # Fast blank-page pass (mean/std); OSD uses *analysis_dpi* in a second render.
+BLANK_DPI = 72  # Fast blank-page pass (mean/std); optional second pass at *analysis_dpi* for OSD.
 BLANK_MEAN_THRESHOLD = 250  # Pages with grayscale mean above this are considered blank (0-255)
 BLANK_STD_THRESHOLD = 6     # Pages with grayscale std below this are considered blank
 
 
-def detect_rotation(image: Image.Image) -> int:
-    """Return CCW rotation (0, 90, 180, 270) needed for upright page, or 0 on failure."""
+def _normalized_page_rotate(page: pikepdf.Page) -> int:
+    try:
+        r = int(page.get("/Rotate", 0))
+    except (TypeError, ValueError):
+        r = 0
+    return r % 360
+
+
+def _detect_rotation_osd(image: Image.Image) -> int:
+    """Tesseract OSD: CCW rotation (0, 90, 180, 270) to upright the *raster*, or 0 on failure."""
+    import pytesseract
+
     try:
         osd = pytesseract.image_to_osd(image, output_type=pytesseract.Output.DICT)
         angle = int(osd.get("rotate", 0))
@@ -55,6 +70,10 @@ def detect_rotation(image: Image.Image) -> int:
 
     except pytesseract.TesseractError:
         return 0
+
+
+# Public alias (legacy name; Tesseract path only).
+detect_rotation = _detect_rotation_osd
 
 
 def is_blank_page(
@@ -71,7 +90,49 @@ def is_blank_page(
 
 def _rotation_worker(args: tuple[int, Image.Image]) -> tuple[int, int]:
     page_num, pil_img = args
-    return page_num, detect_rotation(pil_img)
+    return page_num, _detect_rotation_osd(pil_img)
+
+
+def _rotation_map_from_tesseract_osd(
+    hi_res_pages: list,
+    content_page_nums: list[int],
+    *,
+    console,
+    verbose: bool,
+) -> dict[int, int]:
+    """Run parallel Tesseract OSD on content pages; return page_num → extra CCW rotation."""
+    from shared.terminal_ui import PROGRESS_TASK_TEXT
+
+    _tc = os.cpu_count() or 4
+    num_workers = min(_tc, len(content_page_nums))
+    if verbose:
+        console.print(
+            f"  Tesseract OSD on {len(content_page_nums)} content pages "
+            f"({num_workers} workers)"
+        )
+
+    rotation_map: dict[int, int] = {}
+    osd_inputs = [(pn, hi_res_pages[pn - 1]) for pn in content_page_nums]
+
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = {
+            executor.submit(_rotation_worker, item): item[0] for item in osd_inputs
+        }
+        with Progress(
+            TextColumn(PROGRESS_TASK_TEXT),
+            BarColumn(bar_width=28),
+            TaskProgressColumn(),
+            CompactElapsedColumn(),
+            console=console,
+            transient=False,
+        ) as prog:
+            task_id = prog.add_task("", total=len(futures))
+            for future in as_completed(futures):
+                page_num, angle = future.result()
+                rotation_map[page_num] = angle
+                prog.advance(task_id)
+
+    return rotation_map
 
 
 def _raster_with_spinner(label: str, fn, *, console) -> list:
@@ -105,18 +166,26 @@ def process_pdf(
     blank_std: float = BLANK_STD_THRESHOLD,
     *,
     verbose: bool = True,
+    use_tesseract_rotation: bool | None = None,
 ) -> None:
-    """Blank detection + OSD rotation; write lossless PDF to *output_path*.
+    """Blank detection; optional Tesseract OSD rotation; write PDF to *output_path*.
 
-    Two Poppler passes: all pages at :data:`BLANK_DPI` for blanks, then all pages at
-    *analysis_dpi* (pipeline DPI from :mod:`preprocessing.start_scan`) for Tesseract OSD.
-    Parallel workers only run Tesseract on content pages; no per-page Poppler launches.
+    Default (``use_tesseract_rotation`` false / ``config.SCAN_USE_TESSERACT_ROTATION`` off):
+    one Poppler raster at :data:`BLANK_DPI` for blanks; copy content pages preserving PDF
+    ``/Rotate`` (scanner metadata). No second raster; ``analysis_dpi`` unused.
+
+    When ``use_tesseract_rotation`` is true: second raster at *analysis_dpi*, parallel
+    Tesseract OSD, then ``existing /Rotate + OSD angle`` on each kept page.
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
 
+    if use_tesseract_rotation is None:
+        from config import SCAN_USE_TESSERACT_ROTATION
+
+        use_tesseract_rotation = SCAN_USE_TESSERACT_ROTATION
+
     from shared.terminal_ui import (
-        PROGRESS_TASK_TEXT,
         err_line,
         get_console,
         icon,
@@ -146,10 +215,16 @@ def process_pdf(
                 border_style="dim cyan",
             )
         )
-        note_line(
-            f"Blank pass @ {BLANK_DPI} DPI  |  OSD pass @ {analysis_dpi} DPI  |  "
-            f"Blank: mean≥{blank_mean}, std≤{blank_std}"
-        )
+        if use_tesseract_rotation:
+            note_line(
+                f"Blank pass @ {BLANK_DPI} DPI  |  OSD pass @ {analysis_dpi} DPI  |  "
+                f"Blank: mean≥{blank_mean}, std≤{blank_std}"
+            )
+        else:
+            note_line(
+                f"Blank pass @ {BLANK_DPI} DPI  |  Rotation: PDF /Rotate (scanner)  |  "
+                f"Blank: mean≥{blank_mean}, std≤{blank_std}"
+            )
 
     _tc = os.cpu_count() or 4
     if verbose:
@@ -193,52 +268,35 @@ def process_pdf(
         warn_line("All pages were removed (all blank?). Nothing to save.")
         sys.exit(1)
 
-    if verbose:
-        c.print(
-            f"\n[bold cyan]  {icon('gear')}  Pass 2: raster @ {analysis_dpi} DPI for OSD[/]"
+    src_pdf = pikepdf.open(str(input_path))
+
+    if use_tesseract_rotation:
+        if verbose:
+            c.print(
+                f"\n[bold cyan]  {icon('gear')}  Pass 2: raster @ {analysis_dpi} DPI for OSD[/]"
+            )
+            hi_res_pages = convert_from_path(
+                str(input_path),
+                dpi=analysis_dpi,
+                grayscale=True,
+                thread_count=_tc,
+            )
+        else:
+            hi_res_pages = _raster_with_spinner(
+                f"Rotation detection ({analysis_dpi} DPI)",
+                lambda: convert_from_path(str(input_path), dpi=analysis_dpi, grayscale=True, thread_count=_tc),
+                console=c,
+            )
+
+        rotation_map = _rotation_map_from_tesseract_osd(
+            hi_res_pages, content_page_nums, console=c, verbose=verbose
         )
-        hi_res_pages = convert_from_path(
-            str(input_path),
-            dpi=analysis_dpi,
-            grayscale=True,
-            thread_count=_tc,
-        )
+        del hi_res_pages
     else:
-        hi_res_pages = _raster_with_spinner(
-            f"Rotation detection ({analysis_dpi} DPI)",
-            lambda: convert_from_path(str(input_path), dpi=analysis_dpi, grayscale=True, thread_count=_tc),
-            console=c,
-        )
-
-    num_workers = min(_tc, len(content_page_nums))
-    if verbose:
-        c.print(
-            f"  Tesseract OSD on {len(content_page_nums)} content pages "
-            f"({num_workers} workers)"
-        )
-
-    rotation_map: dict[int, int] = {}
-    osd_inputs = [(pn, hi_res_pages[pn - 1]) for pn in content_page_nums]
-
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = {
-            executor.submit(_rotation_worker, item): item[0] for item in osd_inputs
-        }
-        with Progress(
-            TextColumn(PROGRESS_TASK_TEXT),
-            BarColumn(bar_width=28),
-            TaskProgressColumn(),
-            CompactElapsedColumn(),
-            console=c,
-            transient=False,
-        ) as prog:
-            task_id = prog.add_task("", total=len(futures))
-            for future in as_completed(futures):
-                page_num, angle = future.result()
-                rotation_map[page_num] = angle
-                prog.advance(task_id)
-
-    del hi_res_pages
+        if verbose:
+            c.print()
+            note_line("Using scanner /Rotate metadata — Tesseract OSD skipped.")
+        rotation_map = {pn: 0 for pn in content_page_nums}
 
     if verbose:
         rot_table = Table(
@@ -251,10 +309,15 @@ def process_pdf(
         rot_table.add_column("Page", justify="right", style="dim")
         rot_table.add_column("Status", overflow="fold")
 
-        for pn in sorted(rotation_map):
-            angle = rotation_map[pn]
-            status = f"rotate {angle}°" if angle != 0 else "ok"
-            rot_table.add_row(str(pn), status)
+        if use_tesseract_rotation:
+            for pn in sorted(rotation_map):
+                angle = rotation_map[pn]
+                status = f"rotate {angle}°" if angle != 0 else "ok"
+                rot_table.add_row(str(pn), status)
+        else:
+            for pn in sorted(content_page_nums):
+                deg = _normalized_page_rotate(src_pdf.pages[pn - 1])
+                rot_table.add_row(str(pn), f"{deg}° (preserved)")
         for pn in sorted(blank_page_nums):
             rot_table.add_row(str(pn), "blank (removed)")
 
@@ -262,10 +325,17 @@ def process_pdf(
         c.print(Panel(rot_table, border_style="dim cyan"))
 
     else:
-        rotated = sum(1 for a in rotation_map.values() if a != 0)
-        rot_s = f"{rotated} rotated" if rotated else "none rotated"
+        if use_tesseract_rotation:
+            rotated = sum(1 for a in rotation_map.values() if a != 0)
+            rot_s = f"{rotated} rotated" if rotated else "none rotated"
+        else:
+            rots = [
+                _normalized_page_rotate(src_pdf.pages[pn - 1]) for pn in content_page_nums
+            ]
+            cnt = Counter(rots)
+            parts = [f"{n} at {deg}°" for deg, n in sorted(cnt.items())]
+            rot_s = ", ".join(parts) + " (scanner)"
 
-    src_pdf = pikepdf.open(str(input_path))
     out_pdf = pikepdf.new()
 
     for pn in content_page_nums:
