@@ -89,7 +89,7 @@ echo "--- Verifying (first run may download model weights — large, normal) ---
 import paddle
 paddle.utils.run_check()
 from paddleocr import PaddleOCR
-ocr = PaddleOCR(use_angle_cls=True, lang="en")
+ocr = PaddleOCR(use_textline_orientation=True, lang="en")
 print("PaddleOCR ready")
 import easyocr
 reader = easyocr.Reader(["en"], gpu=False)

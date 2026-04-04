@@ -149,10 +149,7 @@ def run_paddleocr(cv2_img: np.ndarray) -> str:
         return "[paddleocr not installed]"
 
     if not hasattr(run_paddleocr, "_ocr"):
-        try:
-            run_paddleocr._ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)  # type: ignore[attr-defined]
-        except TypeError:
-            run_paddleocr._ocr = PaddleOCR(use_angle_cls=True, lang="en")  # type: ignore[attr-defined]
+        run_paddleocr._ocr = PaddleOCR(use_textline_orientation=True, lang="en")  # type: ignore[attr-defined]
 
     ocr = run_paddleocr._ocr  # type: ignore[attr-defined]
     try:
