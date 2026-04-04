@@ -1,6 +1,11 @@
 """Blank-page removal and page rotation for class-scan PDFs (pikepdf).
 
 By default rotation follows each page's PDF ``/Rotate`` metadata (scanner output).
+If the blank pass (72 DPI) renders a **content** page wider than tall, Poppler has
+already applied a non-zero ``/Rotate`` to a portrait ``MediaBox``; we then write
+``/Rotate=0`` on output so deskew sees portrait rasters. True landscape scans
+with the same shape are rare here; use ``SCAN_USE_TESSERACT_ROTATION`` if needed.
+
 Optional Tesseract OSD can add an extra CCW adjustment on top (slow); see
 ``config.SCAN_USE_TESSERACT_ROTATION``.
 
@@ -171,11 +176,14 @@ def process_pdf(
     """Blank detection; optional Tesseract OSD rotation; write PDF to *output_path*.
 
     Default (``use_tesseract_rotation`` false / ``config.SCAN_USE_TESSERACT_ROTATION`` off):
-    one Poppler raster at :data:`BLANK_DPI` for blanks; copy content pages preserving PDF
-    ``/Rotate`` (scanner metadata). No second raster; ``analysis_dpi`` unused.
+    one Poppler raster at :data:`BLANK_DPI` for blanks. Content pages whose render is
+    landscape (width > height) get ``/Rotate`` cleared to 0 so downstream deskew gets
+    portrait bitmaps; other pages keep scanner ``/Rotate``. No second raster;
+    ``analysis_dpi`` unused.
 
     When ``use_tesseract_rotation`` is true: second raster at *analysis_dpi*, parallel
-    Tesseract OSD, then ``existing /Rotate + OSD angle`` on each kept page.
+    Tesseract OSD, then ``existing /Rotate + OSD angle`` on each kept page (no landscape
+    shortcut).
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -262,6 +270,7 @@ def process_pdf(
             f"  → {len(blank_page_nums)} blank pages, {len(content_page_nums)} content pages"
         )
 
+    page_render_sizes: list[tuple[int, int]] = [img.size for img in low_res_pages]
     del low_res_pages
 
     if not content_page_nums:
@@ -269,6 +278,7 @@ def process_pdf(
         sys.exit(1)
 
     src_pdf = pikepdf.open(str(input_path))
+    landscape_pages: set[int] = set()
 
     if use_tesseract_rotation:
         if verbose:
@@ -297,6 +307,11 @@ def process_pdf(
             c.print()
             note_line("Using scanner /Rotate metadata — Tesseract OSD skipped.")
         rotation_map = {pn: 0 for pn in content_page_nums}
+        landscape_pages = {
+            pn
+            for pn in content_page_nums
+            if page_render_sizes[pn - 1][0] > page_render_sizes[pn - 1][1]
+        }
 
     if verbose:
         rot_table = Table(
@@ -317,7 +332,10 @@ def process_pdf(
         else:
             for pn in sorted(content_page_nums):
                 deg = _normalized_page_rotate(src_pdf.pages[pn - 1])
-                rot_table.add_row(str(pn), f"{deg}° (preserved)")
+                if pn in landscape_pages:
+                    rot_table.add_row(str(pn), f"{deg}° → 0° (layout fix)")
+                else:
+                    rot_table.add_row(str(pn), f"{deg}° (preserved)")
         for pn in sorted(blank_page_nums):
             rot_table.add_row(str(pn), "blank (removed)")
 
@@ -329,12 +347,16 @@ def process_pdf(
             rotated = sum(1 for a in rotation_map.values() if a != 0)
             rot_s = f"{rotated} rotated" if rotated else "none rotated"
         else:
-            rots = [
-                _normalized_page_rotate(src_pdf.pages[pn - 1]) for pn in content_page_nums
-            ]
+            rots: list[int] = []
+            for pn in content_page_nums:
+                if pn in landscape_pages:
+                    rots.append(0)
+                else:
+                    rots.append(_normalized_page_rotate(src_pdf.pages[pn - 1]))
             cnt = Counter(rots)
             parts = [f"{n} at {deg}°" for deg, n in sorted(cnt.items())]
-            rot_s = ", ".join(parts) + " (scanner)"
+            suffix = " (scanner, corrected)" if landscape_pages else " (scanner)"
+            rot_s = ", ".join(parts) + suffix
 
     out_pdf = pikepdf.new()
 
@@ -349,6 +371,8 @@ def process_pdf(
                 existing_rotate = 0
             new_rotate = (existing_rotate + angle) % 360
             src_page["/Rotate"] = new_rotate
+        elif pn in landscape_pages:
+            src_page["/Rotate"] = pikepdf.Integer(0)
 
         out_pdf.pages.append(src_page)
 
