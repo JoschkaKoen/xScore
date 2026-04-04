@@ -27,6 +27,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 # Repo root for imports when run as a script
@@ -208,7 +209,8 @@ def benchmark(
             matched = fuzzy_match_name(raw_s.strip(), students)
             match_s = matched if matched is not None else "no match"
         raw_display = raw_s if len(raw_s) <= 80 else raw_s[:77] + "..."
-        rows.append((name, raw_display, match_s, format_duration(elapsed)))
+        # Rich treats "[" as markup; escape so "[easyocr not installed]" is visible.
+        rows.append((name, escape(raw_display), match_s, format_duration(elapsed)))
 
     table = Table(title="OCR name benchmark", show_header=True, header_style="bold")
     table.add_column("Engine", style="cyan", no_wrap=True)
@@ -222,7 +224,9 @@ def benchmark(
     console.print(table)
     console.print(
         "\n[dim]Times include lazy init on first EasyOCR/PaddleOCR use in this process. "
-        "Fuzzy matching is not timed.[/dim]"
+        "Fuzzy matching is not timed.[/dim]\n"
+        "[dim]If EasyOCR or PaddleOCR are not installed in this Python, run: "
+        "`source paddle_env/bin/activate` (see scripts/install_paddleocr.sh).[/dim]"
     )
 
 
