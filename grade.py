@@ -15,12 +15,13 @@ The program will:
   2. Locate the exam folder.
   3. Read the student roster from StudentList.xlsx.
   4. Build an exam scaffold by parsing vector exam + answer-key PDFs (PyMuPDF).
-  5. Clean the scan PDF (auto-rotate + blank removal + deskew); writes under output/<exam_stem>/<run_id>/.
-  6. Identify which pages belong to which student.
-  7. Detect which exercises each student attempted.
-  8. Grade and print a full results table.
-  9. Evaluate against ground truth (if a ground_truth.txt file exists in the folder).
- 10. Generate a LaTeX/PDF report in the same run directory.
+  5–8. Clean the class scan (blank pages, autorotate, deskew, exam→scan transform); writes under output/<exam_stem>/<run_id>/.
+  9. Identify which pages belong to which student.
+ 10. Detect which exercises each student attempted.
+ 11. Grade and print a full results table.
+ 12. Print results summary.
+ 13. Evaluate against ground truth (if a ground_truth.txt file exists in the folder).
+ 14. Generate a LaTeX/PDF report in the same run directory.
 """
 
 from __future__ import annotations
@@ -122,8 +123,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         metavar="N",
-        choices=list(range(1, 12)),
-        help="Exit after pipeline step N (1–11); overrides through_step from prompt if set",
+        choices=list(range(1, 15)),
+        help="Exit after pipeline step N (1–14); overrides through_step from prompt if set",
     )
     parser.add_argument(
         "--no-report",
@@ -205,7 +206,7 @@ def _print_grade_run_footer(ctx: _GradeCtx, gi: SimpleNamespace, elapsed: float)
     gi.get_console().print()
     if ctx.partial_stop_readme_step is not None:
         n = ctx.partial_stop_readme_step
-        gi.info_line(f"Run · {t} · partial {n}/11")
+        gi.info_line(f"Run · {t} · partial {n}/14")
     elif ctx.pipeline_completed_ok:
         gi.info_line(f"Run · {t} · complete")
     else:
@@ -228,7 +229,14 @@ def _load_grade_imports() -> SimpleNamespace:
     from marking.find_exam_folder import find_folder
     from marking.grade_answers import grade_students
     from marking.parse_instruction import parse_prompt
-    from preprocessing.start_scan import cleanup_pdf
+    from preprocessing.start_scan import (
+        CLEANED_SCAN_PDF,
+        autorotate_phase,
+        calculate_transformation_phase,
+        deskew_phase,
+        detect_blank_pages_phase,
+        find_source_scan_match,
+    )
     from reports.generate_report import generate_report
     from reports.print_results import (
         print_evaluation_summary,
@@ -265,7 +273,12 @@ def _load_grade_imports() -> SimpleNamespace:
         find_folder=find_folder,
         grade_students=grade_students,
         parse_prompt=parse_prompt,
-        cleanup_pdf=cleanup_pdf,
+        CLEANED_SCAN_PDF=CLEANED_SCAN_PDF,
+        autorotate_phase=autorotate_phase,
+        calculate_transformation_phase=calculate_transformation_phase,
+        deskew_phase=deskew_phase,
+        detect_blank_pages_phase=detect_blank_pages_phase,
+        find_source_scan_match=find_source_scan_match,
         generate_report=generate_report,
         print_evaluation_summary=print_evaluation_summary,
         print_exercise_summary=print_exercise_summary,
@@ -299,7 +312,7 @@ def _grade_create_client(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
 
 
 def _grade_step01_parse(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
-    gi.pipeline_step(1, "Your request")
+    gi.pipeline_step(1, "Analyzing your request")
     gi.info_line(f"Parsing prompt with {gi.pipeline_ai_model_display_name()} …")
     t0 = time.perf_counter()
     ctx.instruction = gi.parse_prompt(ctx.args.prompt, client=ctx.client, dpi_override=ctx.args.dpi)
@@ -347,7 +360,7 @@ def _grade_step01_parse(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
 
 def _grade_step02_folder(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     assert ctx.instruction is not None
-    gi.pipeline_step(2, "Exam folder")
+    gi.pipeline_step(2, "Select exam folder")
     ctx.folder = gi.find_folder(
         instruction_hint=ctx.instruction.folder_hint,
         cli_override=ctx.args.folder,
@@ -372,7 +385,7 @@ def _grade_step02_folder(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
 
 def _grade_step03_students(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     assert ctx.folder is not None
-    gi.pipeline_step(3, "Students")
+    gi.pipeline_step(3, "Read student list")
     ctx.students = gi.read_student_list(ctx.folder)
     gi.ok_line(f"{len(ctx.students)} students on the roster")
     if ctx.through_step == 3:
@@ -382,7 +395,7 @@ def _grade_step03_students(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
 
 def _grade_step04_scaffold(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     assert ctx.folder is not None and ctx.artifact_dir is not None and ctx.client is not None
-    gi.pipeline_step(4, "Mark scheme")
+    gi.pipeline_step(4, "Read raw exam & create scaffold")
     if ctx.rescaffold:
         for cache_p in (
             gi.artifact_scaffold_cache_path(ctx.artifact_dir),
@@ -401,19 +414,24 @@ def _grade_step04_scaffold(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         raise SystemExit(0)
 
 
-def _grade_step05_clean_scan(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
+def _grade_scan_phases(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
+    """Steps 5–8: blank detection, autorotate, deskew, exam→scan transform overlay."""
     assert ctx.folder is not None and ctx.artifact_dir is not None and ctx.instruction is not None
-    gi.pipeline_step(5, "Scan")
-    gi.get_console().print()
+    ad = ctx.artifact_dir
+    dpi = ctx.instruction.dpi
+    cleaned_path = ad / gi.CLEANED_SCAN_PDF
+
     if ctx.skip_clean_scan:
-        cleaned_here = ctx.artifact_dir / "cleaned_scan.pdf"
-        legacy_cleaned = ctx.folder / "cleaned_scan.pdf"
+        gi.pipeline_step(5, "Detect blank pages")
+        gi.get_console().print()
+        cleaned_here = ad / gi.CLEANED_SCAN_PDF
+        legacy_cleaned = ctx.folder / gi.CLEANED_SCAN_PDF
         if cleaned_here.exists():
             ctx.cleaned_pdf = cleaned_here
-            gi.info_line("Using existing cleaned scan (skip).")
+            gi.info_line("Using existing cleaned scan (skip) — later scan steps skipped.")
         elif legacy_cleaned.exists():
             ctx.cleaned_pdf = legacy_cleaned
-            gi.info_line("Using existing cleaned scan (skip).")
+            gi.info_line("Using existing cleaned scan (skip) — later scan steps skipped.")
         else:
             scans = list(ctx.folder.glob("*.pdf"))
             scans = [f for f in scans if "scan" in f.name.lower()]
@@ -421,27 +439,71 @@ def _grade_step05_clean_scan(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
                 gi.err_line("skip_clean_scan set but no scan PDF found.")
                 raise SystemExit(1)
             ctx.cleaned_pdf = scans[0]
-            gi.info_line("Using existing scan PDF (skip).")
-    else:
-        ctx.cleaned_pdf = gi.cleanup_pdf(
-            ctx.folder,
-            dpi=ctx.instruction.dpi,
-            force_clean_scan=ctx.force_clean_scan,
-            artifact_dir=ctx.artifact_dir,
-        )
+            gi.info_line("Using existing scan PDF (skip) — later scan steps skipped.")
+        return
+
+    match = gi.find_source_scan_match(ctx.folder, ad, dpi)
+    partial_scan = (
+        ctx.through_step is not None
+        and isinstance(ctx.through_step, int)
+        and 5 <= ctx.through_step <= 8
+    )
+    cache_allowed = not partial_scan
+    cache_ok = (
+        cache_allowed
+        and not ctx.force_clean_scan
+        and cleaned_path.is_file()
+        and cleaned_path.stat().st_mtime >= match.stat().st_mtime
+    )
+    if cache_ok:
+        gi.pipeline_step(5, "Detect blank pages")
+        gi.get_console().print()
+        gi.info_line("Using cached cleaned scan (steps 5–8 skipped).")
+        ctx.cleaned_pdf = cleaned_path
+        return
+
+    gi.pipeline_step(5, "Detect blank pages")
+    gi.get_console().print()
+    gi.detect_blank_pages_phase(
+        match,
+        ad,
+        analysis_dpi=dpi,
+        force_clean_scan=ctx.force_clean_scan,
+    )
     if ctx.through_step == 5:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
+    gi.pipeline_step(6, "Autorotate")
+    gi.get_console().print()
+    gi.autorotate_phase(ad, verbose=False)
+    if ctx.through_step == 6:
+        ctx.partial_stop_readme_step = ctx.through_step
+        raise SystemExit(0)
 
-def _grade_step06_page_assignment(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
+    gi.pipeline_step(7, "Small angle correction")
+    gi.get_console().print()
+    ctx.cleaned_pdf = gi.deskew_phase(ctx.folder, ad, dpi, verbose=False)
+    if ctx.through_step == 7:
+        ctx.partial_stop_readme_step = ctx.through_step
+        raise SystemExit(0)
+
+    gi.pipeline_step(8, "Calculate transformation")
+    gi.get_console().print()
+    gi.calculate_transformation_phase(ctx.folder, ad, dpi, verbose=False)
+    if ctx.through_step == 8:
+        ctx.partial_stop_readme_step = ctx.through_step
+        raise SystemExit(0)
+
+
+def _grade_step09_page_assignment(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     assert (
         ctx.cleaned_pdf is not None
         and ctx.students is not None
         and ctx.instruction is not None
         and ctx.client is not None
     )
-    gi.pipeline_step(6, "Page assignment")
+    gi.pipeline_step(9, "Page assignment")
     ctx.thread_count = os.cpu_count() or 4
     gi.info_line(
         f"Rendering pages for name + exercise detection @ {gi.NAME_RECOGNITION_DPI} DPI …"
@@ -464,7 +526,7 @@ def _grade_step06_page_assignment(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         pages=ctx.name_pages,
     )
     gi.print_page_summary(ctx.page_map, ctx.students)
-    if ctx.through_step == 6:
+    if ctx.through_step == 9:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
@@ -473,7 +535,7 @@ def _grade_step06_page_assignment(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         raise SystemExit(0)
 
     will_grade = ctx.through_step is None or (
-        isinstance(ctx.through_step, int) and ctx.through_step >= 8
+        isinstance(ctx.through_step, int) and ctx.through_step >= 11
     )
     if will_grade:
         ctx.grade_render_ex = gi.ThreadPoolExecutor(max_workers=1)
@@ -487,7 +549,7 @@ def _grade_step06_page_assignment(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         )
 
 
-def _grade_step07_detect(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
+def _grade_step10_detect(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     assert (
         ctx.cleaned_pdf is not None
         and ctx.page_map is not None
@@ -495,7 +557,7 @@ def _grade_step07_detect(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         and ctx.name_pages is not None
         and ctx.client is not None
     )
-    gi.pipeline_step(7, "Questions attempted")
+    gi.pipeline_step(10, "Questions attempted")
     ctx.exercise_map = gi.detect_answered_exercises(
         ctx.cleaned_pdf,
         ctx.page_map,
@@ -505,14 +567,14 @@ def _grade_step07_detect(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         pages=ctx.name_pages,
     )
     gi.print_exercise_summary(ctx.exercise_map)
-    if ctx.through_step == 7:
+    if ctx.through_step == 10:
         if ctx.grade_render_ex is not None:
             ctx.grade_render_ex.shutdown(wait=False, cancel_futures=True)
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
-def _grade_step08_09_grade(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
+def _grade_step11_12_grade(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     assert (
         ctx.cleaned_pdf is not None
         and ctx.page_map is not None
@@ -521,7 +583,7 @@ def _grade_step08_09_grade(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         and ctx.instruction is not None
         and ctx.client is not None
     )
-    gi.pipeline_step(8, "Marking")
+    gi.pipeline_step(11, "Marking")
     ctx.grade_pages = None
     if ctx.grade_pages_future is not None:
         gi.info_line(f"Awaiting marking render @ {ctx.instruction.dpi} DPI …")
@@ -541,17 +603,17 @@ def _grade_step08_09_grade(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         client=ctx.client,
         pages=ctx.grade_pages,
     )
-    gi.pipeline_step(9, "Results")
+    gi.pipeline_step(12, "Results")
     gi.print_results_table(ctx.results, ctx.scaffold)
     gi.print_grand_summary(ctx.results)
-    if ctx.through_step in (8, 9):
+    if ctx.through_step in (11, 12):
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
-def _grade_step10_eval(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
+def _grade_step13_eval(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     assert ctx.folder is not None and ctx.scaffold is not None and ctx.results is not None
-    gi.pipeline_step(10, "Accuracy check")
+    gi.pipeline_step(13, "Accuracy check")
     ctx.eval_data = None
     gt_file = gi.find_ground_truth_file(ctx.folder)
     if gt_file is not None:
@@ -565,15 +627,15 @@ def _grade_step10_eval(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     else:
         gi.info_line("No reference list in the exam folder — skipped.")
 
-    if ctx.through_step == 10:
+    if ctx.through_step == 13:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
-def _grade_step11_report(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
+def _grade_step14_report(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     assert ctx.folder is not None and ctx.scaffold is not None and ctx.results is not None
     assert ctx.run_dir is not None
-    gi.pipeline_step(11, "Report")
+    gi.pipeline_step(14, "Report")
     if not ctx.no_report:
         output_tex = ctx.run_dir / "grade_report.tex"
         output_pdf = ctx.run_dir / "grade_report.pdf"
@@ -589,7 +651,7 @@ def _grade_step11_report(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         gi.ok_line("Report saved.")
     else:
         gi.info_line("PDF report skipped (you turned it off).")
-    if ctx.through_step == 11:
+    if ctx.through_step == 14:
         gi.ok_line("Pipeline complete.")
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
@@ -608,12 +670,12 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
         _grade_step02_folder(ctx, gi)
         _grade_step03_students(ctx, gi)
         _grade_step04_scaffold(ctx, gi)
-        _grade_step05_clean_scan(ctx, gi)
-        _grade_step06_page_assignment(ctx, gi)
-        _grade_step07_detect(ctx, gi)
-        _grade_step08_09_grade(ctx, gi)
-        _grade_step10_eval(ctx, gi)
-        _grade_step11_report(ctx, gi)
+        _grade_scan_phases(ctx, gi)
+        _grade_step09_page_assignment(ctx, gi)
+        _grade_step10_detect(ctx, gi)
+        _grade_step11_12_grade(ctx, gi)
+        _grade_step13_eval(ctx, gi)
+        _grade_step14_report(ctx, gi)
     finally:
         _print_grade_run_footer(ctx, gi, time.perf_counter() - t0)
 
