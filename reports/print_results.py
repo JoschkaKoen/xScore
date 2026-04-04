@@ -45,7 +45,9 @@ _BULLET_ONLY_LINE = frozenset(
     }
 )
 
+# Character class for list bullets when normalizing wrapped scaffold text in the terminal.
 _BULLET_CLASS = "•·▪‣"
+# Join "bullet + newline + text" into "bullet + space + text" without merging separate bullet lines.
 _NEWLINE_AFTER_BULLET = re.compile(
     rf"([{_BULLET_CLASS}])\s*\n(?!\s*(?:[{_BULLET_CLASS}]))",
 )

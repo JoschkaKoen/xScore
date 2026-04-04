@@ -12,14 +12,12 @@ Returns a list of ``PageAssignment`` objects.
 
 from __future__ import annotations
 
-import base64
-import io
-import json
 import os
 import time
 from pathlib import Path
 from typing import Any
 
+from .kimi_helpers import kimi_image_call, page_to_jpeg_b64, parse_json_safe
 from shared.models import PageAssignment
 
 
@@ -38,44 +36,6 @@ def _crop_top(page, fraction: float = 0.15):
     """Return the top *fraction* of a PIL image."""
     w, h = page.size
     return page.crop((0, 0, w, int(h * fraction)))
-
-
-def _to_jpeg_b64(img) -> str:
-    buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="JPEG", quality=85)
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
-
-
-def _call_kimi(client: Any, image_b64: str) -> str:
-    from shared.terminal_ui import warn_line
-
-    model = os.getenv("PIPELINE_AI_MODEL") or "kimi-k2.5"
-    is_k2_5 = model.startswith("kimi-k2")
-    extra: dict = {}
-    if is_k2_5:
-        extra["extra_body"] = {"thinking": {"type": "disabled"}}
-
-    for attempt in range(1, 4):
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": _NAME_PROMPT},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                    ],
-                }],
-                max_tokens=64,
-                response_format={"type": "json_object"},
-                **extra,
-            )
-            return resp.choices[0].message.content or ""
-        except Exception as exc:
-            warn_line(f"API error (attempt {attempt}/3): {exc}")
-            if attempt < 3:
-                time.sleep(2 ** attempt)
-    return ""
 
 
 def assign_pages(
@@ -115,12 +75,10 @@ def assign_pages(
     raw_names: list[str] = []
     for i, page in enumerate(pages, 1):
         crop = _crop_top(page, fraction=name_crop_fraction)
-        img_b64 = _to_jpeg_b64(crop)
-        raw = _call_kimi(client, img_b64)
-        try:
-            name = json.loads(raw).get("name", "").strip()
-        except (json.JSONDecodeError, AttributeError):
-            name = ""
+        img_b64 = page_to_jpeg_b64(crop)
+        raw = kimi_image_call(client, img_b64, _NAME_PROMPT, max_tokens=64)
+        data = parse_json_safe(raw)
+        name = str(data.get("name", "") or "").strip()
         if verbose or i == 1 or i == n_pages or (i % step == 0):
             info_line(f"Page {i:3d}/{n_pages}: raw name = {name!r}")
         raw_names.append(name)

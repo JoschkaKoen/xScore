@@ -225,7 +225,10 @@ def note_line(message: str) -> None:
 
 
 def tool_line(tool: str, message: str) -> None:
-    """Same layout as :func:`info_line` (subsystem *tool* kept for call-site clarity only)."""
-    _ = tool
-    get_console().print(f"[dim]  {icon('info')}  {message}[/]")
+    """Like :func:`info_line`; when :func:`pipeline_verbose` is on, prefix with ``[tool]``."""
+    c = get_console()
+    if pipeline_verbose():
+        c.print(f"[dim]  {icon('info')}  [{tool}] {message}[/]")
+    else:
+        c.print(f"[dim]  {icon('info')}  {message}[/]")
     sys.stdout.flush()

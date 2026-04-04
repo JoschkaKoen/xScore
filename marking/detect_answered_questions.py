@@ -6,15 +6,12 @@ the more detailed per-question grading step.
 
 from __future__ import annotations
 
-import base64
-import io
-import json
 import os
 import time
 from pathlib import Path
 from typing import Any
 
-from config import resolve_pipeline_ai_model_id
+from .kimi_helpers import kimi_image_call, page_to_jpeg_b64, parse_json_safe
 from shared.models import ExamScaffold, PageAssignment
 
 
@@ -33,43 +30,6 @@ Return ONLY a JSON object:
 If none are visible, return:
 {{"attempted": []}}
 """
-
-
-def _to_jpeg_b64(page) -> str:
-    buf = io.BytesIO()
-    page.convert("RGB").save(buf, format="JPEG", quality=85)
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
-
-
-def _call_kimi(client: Any, image_b64: str, prompt: str) -> str:
-    model = resolve_pipeline_ai_model_id()
-    is_k2_5 = model.startswith("kimi-k2")
-    extra: dict = {}
-    if is_k2_5:
-        extra["extra_body"] = {"thinking": {"type": "disabled"}}
-
-    for attempt in range(1, 4):
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                    ],
-                }],
-                max_tokens=256,
-                response_format={"type": "json_object"},
-                **extra,
-            )
-            return resp.choices[0].message.content or ""
-        except Exception as exc:
-            from shared.terminal_ui import warn_line
-            warn_line(f"API error (attempt {attempt}/3): {exc}")
-            if attempt < 3:
-                time.sleep(2 ** attempt)
-    return ""
 
 
 def detect_answered_exercises(
@@ -115,13 +75,13 @@ def detect_answered_exercises(
             if page_num < 1 or page_num > len(all_pages):
                 continue
             page = all_pages[page_num - 1]
-            img_b64 = _to_jpeg_b64(page)
-            raw = _call_kimi(client, img_b64, prompt)
-
-            try:
-                data = json.loads(raw)
-                page_attempted = [str(x) for x in data.get("attempted", [])]
-            except (json.JSONDecodeError, TypeError):
+            img_b64 = page_to_jpeg_b64(page)
+            raw = kimi_image_call(client, img_b64, prompt, max_tokens=256)
+            data = parse_json_safe(raw)
+            att = data.get("attempted", [])
+            if isinstance(att, list):
+                page_attempted = [str(x) for x in att if x is not None]
+            else:
                 page_attempted = []
 
             attempted.update(page_attempted)

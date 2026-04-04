@@ -15,13 +15,12 @@ _RE_FIG_CAPTION_LINE = re.compile(r"^Fig(?:\.|ure)?\b", re.I)
 # Cambridge mini-page banner lines (e.g. "---IGCSE Physics: s24 23---") — not exercise content.
 _RE_EXAM_SHEET_LABEL_LINE = re.compile(r"IGCSE\s+Physics", re.I)
 
-# PDF private-use glyph for multiplication (often shows as ""); map to ASCII "x".
-_PDF_PUA_MULTIPLY = "\uf0b4"
-# Small left→right arrow from Symbol / Wingdings-style PUA (often "" in extracted text).
+# PDF often maps Symbol/Wingdings glyphs into the Unicode private-use area (PUA).
+# These code points are font-specific; normalize to plain Unicode/ASCII for parsing.
+_PDF_PUA_MULTIPLY = "\uf0b4"  # multiplication cross (displays as a private-use glyph)
 _PDF_PUA_ARROW_RIGHT = "\uf0ae"
-_PDF_PUA_ARROW_RIGHT_ALT = "\uf0ee"
-# Bullet from Symbol / Wingdings-style PUA (often "" in extracted mark-scheme lines).
-_PDF_PUA_BULLET = "\uf0b7"
+_PDF_PUA_ARROW_RIGHT_ALT = "\uf0ee"  # alternate PUA encoding for small right arrow
+_PDF_PUA_BULLET = "\uf0b7"  # round bullet in mark-scheme / list lines
 
 
 def normalize_pdf_multiplication_glyph(text: str) -> str:

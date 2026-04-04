@@ -5,11 +5,11 @@ Uses a text-only Kimi call (no image) so this step is fast and cheap.
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from typing import Any
 
+from .kimi_helpers import parse_json_safe
 from shared.models import StudentFilter, TaskInstruction
 from shared.terminal_ui import info_line, warn_line
 
@@ -114,20 +114,10 @@ def parse_prompt(
         warn_line("Empty AI response — using heuristic parse.")
         return instruction
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        # Try to find JSON block in response
-        start, end = raw.find("{"), raw.rfind("}")
-        if start != -1 and end > start:
-            try:
-                data = json.loads(raw[start : end + 1])
-            except json.JSONDecodeError:
-                warn_line("Could not parse AI response — using heuristic parse.")
-                return instruction
-        else:
-            warn_line("Could not parse AI response — using heuristic parse.")
-            return instruction
+    data = parse_json_safe(raw)
+    if not data:
+        warn_line("Could not parse AI response — using heuristic parse.")
+        return instruction
 
     sf_raw = data.get("student_filter") or {}
     if not isinstance(sf_raw, dict):
@@ -140,10 +130,25 @@ def parse_prompt(
         n_students = int(raw_n) if raw_n is not None and raw_n != "" else 0
     except (TypeError, ValueError):
         n_students = 0
+
+    mode_raw = str(sf_raw.get("mode") or "all").strip().lower().replace("-", "_").replace(" ", "_")
+    if mode_raw not in ("all", "specific", "first_n"):
+        warn_line(f"Unknown student_filter.mode {sf_raw.get('mode')!r} — using 'all'.")
+        mode_raw = "all"
+    names = [str(x) for x in raw_names if x is not None]
+
+    if mode_raw == "specific" and not names:
+        warn_line("student_filter specific had empty names — using 'all'.")
+        mode_raw = "all"
+    if mode_raw == "first_n" and n_students <= 0:
+        warn_line("student_filter first_n had invalid n — using 'all'.")
+        mode_raw = "all"
+        n_students = 0
+
     student_filter = StudentFilter(
-        mode=str(sf_raw.get("mode") or "all"),
-        names=[str(x) for x in raw_names if x is not None],
-        n=n_students,
+        mode=mode_raw,
+        names=names if mode_raw == "specific" else [],
+        n=n_students if mode_raw == "first_n" else 0,
     )
 
     raw_dpi = data.get("dpi")
@@ -206,7 +211,9 @@ def _heuristic_fallback(prompt: str, dpi_override: int | None) -> TaskInstructio
     if "first" in p:
         m = re.search(r"first\s+(\d+)", p)
         if m:
-            student_filter = StudentFilter(mode="first_n", n=int(m.group(1)))
+            k = int(m.group(1))
+            if k > 0:
+                student_filter = StudentFilter(mode="first_n", n=k)
 
     dpi = dpi_override or (300 if ("fast" in p or "quick" in p) else 400)
 

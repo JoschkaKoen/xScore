@@ -45,7 +45,7 @@ def _scaffold_key_from_table_label_line(line: str) -> str | None:
     return None
 
 
-# ``Question 38 (Answer: A)`` lines — full-document scan (order matches scaffold MC leaves).
+# Printed mark-scheme lines: "Question 38 (Answer: A)" — full-document scan; order matches MC leaves.
 _PRINTED_MC_ANSWER_RE = re.compile(
     r"Question\s+(\d+(?:_\d+)?)\s*\(\s*Answer\s*:\s*([A-Da-d])\s*\)",
     re.I,

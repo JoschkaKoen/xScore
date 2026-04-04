@@ -50,9 +50,10 @@ def _filter_schema_fields(data: dict, schema: type[BaseModel]) -> dict:
 
 def _extract_json_from_text(text: str) -> dict | None:
     """Extract JSON from text, handling truncation and extra content.
-    
+
     Tries to find complete JSON object even if response was truncated.
     """
+    # Marking-side equivalent: marking.kimi_helpers.parse_json_safe (returns {} on failure).
     text = text.strip()
     
     # Try direct parsing first

@@ -51,11 +51,15 @@ def _red(text: str) -> str:
     return r"\textcolor{BrickRed}{" + _esc(str(text)) + "}"
 
 
+def _amber(text: str) -> str:
+    return r"\textcolor{Goldenrod}{" + _esc(str(text)) + "}"
+
+
 def _pct_color_tex(pct: float, text: str) -> str:
     if pct >= 80:
         return _green(text)
     if pct >= 50:
-        return r"\textcolor{Goldenrod}{" + _esc(str(text)) + "}"
+        return _amber(text)
     return _red(text)
 
 

@@ -4,12 +4,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# Result / extraction sentinels (pipeline output and tooling):
+#   "?" — unreadable student answer or unknown mark in printed/AI results.
+#   "EXTRACTION_ERROR" — extraction path failed (see per-field error details).
+#   None — absent optional field (e.g. ground truth not provided).
+# Use "" for intentional empty strings where the schema allows; do not overload "?".
+
 
 @dataclass
 class StudentFilter:
     mode: str = "all"           # "all" | "specific" | "first_n"
     names: list[str] = field(default_factory=list)
     n: int = 0
+
+    def __post_init__(self) -> None:
+        if self.mode not in ("all", "specific", "first_n"):
+            raise ValueError(
+                f"StudentFilter.mode must be 'all', 'specific', or 'first_n', got {self.mode!r}"
+            )
+        if self.mode == "specific" and not self.names:
+            raise ValueError("StudentFilter with mode 'specific' requires non-empty names")
+        if self.mode == "first_n" and self.n <= 0:
+            raise ValueError("StudentFilter with mode 'first_n' requires n > 0")
 
 
 @dataclass

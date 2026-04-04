@@ -12,70 +12,13 @@ This gives focused, accurate results; batching can be added later.
 
 from __future__ import annotations
 
-import base64
-import io
-import json
 import os
 import time
 from pathlib import Path
 from typing import Any
 
-from config import resolve_pipeline_ai_model_id
+from .kimi_helpers import kimi_image_call, page_to_jpeg_b64, parse_json_safe
 from shared.models import ExamScaffold, PageAssignment, Question, StudentResult, TaskInstruction
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-def _to_jpeg_b64(page) -> str:
-    buf = io.BytesIO()
-    page.convert("RGB").save(buf, format="JPEG", quality=85)
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
-
-
-def _kimi_call(client: Any, image_b64: str, prompt: str, max_tokens: int = 128) -> str:
-    model = resolve_pipeline_ai_model_id()
-    is_k2_5 = model.startswith("kimi-k2")
-    extra: dict = {}
-    if is_k2_5:
-        extra["extra_body"] = {"thinking": {"type": "disabled"}}
-
-    for attempt in range(1, 4):
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                    ],
-                }],
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"},
-                **extra,
-            )
-            return resp.choices[0].message.content or ""
-        except Exception as exc:
-            from shared.terminal_ui import warn_line
-            warn_line(f"API error (attempt {attempt}/3): {exc}")
-            if attempt < 3:
-                time.sleep(2 ** attempt)
-    return ""
-
-
-def _parse_json_safe(raw: str) -> dict:
-    try:
-        return json.loads(raw.strip())
-    except json.JSONDecodeError:
-        start, end = raw.find("{"), raw.rfind("}")
-        if start != -1 and end > start:
-            try:
-                return json.loads(raw[start : end + 1])
-            except json.JSONDecodeError:
-                pass
-    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -101,9 +44,9 @@ def _grade_mc(
     correct = (question.correct_answer or "").upper().strip()
 
     for page in pages:
-        img_b64 = _to_jpeg_b64(page)
-        raw = _kimi_call(client, img_b64, _prompt_mc(question))
-        data = _parse_json_safe(raw)
+        img_b64 = page_to_jpeg_b64(page)
+        raw = kimi_image_call(client, img_b64, _prompt_mc(question))
+        data = parse_json_safe(raw)
         answer = str(data.get("answer", "?")).upper().strip()
         if answer not in ("", "?"):
             marks = float(question.marks) if answer == correct else 0.0
@@ -134,9 +77,9 @@ def _grade_written(
     question: Question,
 ) -> tuple[str, float]:
     for page in pages:
-        img_b64 = _to_jpeg_b64(page)
-        raw = _kimi_call(client, img_b64, _prompt_written(question), max_tokens=256)
-        data = _parse_json_safe(raw)
+        img_b64 = page_to_jpeg_b64(page)
+        raw = kimi_image_call(client, img_b64, _prompt_written(question), max_tokens=256)
+        data = parse_json_safe(raw)
         answer = str(data.get("answer", "")).strip() or "?"
         try:
             marks = min(float(data.get("marks", 0)), float(question.marks))
@@ -166,9 +109,9 @@ If no red marks are visible, return:
 
 
 def _count_marks_on_page(client: Any, page) -> dict[str, float]:
-    img_b64 = _to_jpeg_b64(page)
-    raw = _kimi_call(client, img_b64, _COUNT_PROMPT, max_tokens=256)
-    data = _parse_json_safe(raw)
+    img_b64 = page_to_jpeg_b64(page)
+    raw = kimi_image_call(client, img_b64, _COUNT_PROMPT, max_tokens=256)
+    data = parse_json_safe(raw)
     raw_marks = data.get("marks", {})
     result: dict[str, float] = {}
     for k, v in raw_marks.items():
