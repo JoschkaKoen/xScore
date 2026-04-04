@@ -165,6 +165,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     from shared.terminal_ui import (
         err_line,
         format_duration,
+        get_console,
         info_line,
         note_line,
         ok_line,
@@ -310,6 +311,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     # Step 5: Clean scan PDF                                              #
     # ------------------------------------------------------------------ #
     pipeline_step(5, "Scan")
+    get_console().print()
     if skip_clean_scan:
         cleaned_here = artifact_dir / "cleaned_scan.pdf"
         legacy_cleaned = folder / "cleaned_scan.pdf"

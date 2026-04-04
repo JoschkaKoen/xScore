@@ -607,6 +607,7 @@ def deskew_pdf_raster(
         t_load = time.perf_counter()
         pages = convert_from_path(str(input_pdf), **_pdf_kw)
         ok_line(f"Pages loaded · {format_duration(time.perf_counter() - t_load)}")
+        c.print()
     n = len(pages)
     num_workers = min(os.cpu_count() or 4, n)
     if verbose:
@@ -655,6 +656,7 @@ def deskew_pdf_raster(
     if verbose:
         tool_line("deskew", "Extracting IGCSE template from page 1 …")
     elif not verbose:
+        c.print()
         info_line("Finding headers and vertical lines …")
         t_hdr = time.perf_counter()
 
@@ -713,6 +715,7 @@ def deskew_pdf_raster(
         tool_line("deskew", "Saved alignment data (anchors and layout lines).")
 
     if not verbose:
+        c.print()
         info_line("Writing cleaned scan …")
         t_write = time.perf_counter()
 

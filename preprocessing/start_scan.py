@@ -113,6 +113,9 @@ def cleanup_pdf(
     )
 
     if deskew:
+        from shared.terminal_ui import get_console
+
+        get_console().print()
         from preprocessing.deskew import deskew_pdf_raster  # type: ignore[import]
 
         tmp_deskew = output.parent / f"{output.stem}_deskew_tmp{output.suffix}"
