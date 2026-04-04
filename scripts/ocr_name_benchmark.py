@@ -36,9 +36,32 @@ _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from extraction.ground_truth import fuzzy_match_name  # noqa: E402
+# Import helpers directly by file path to avoid triggering extraction/__init__.py,
+# which pulls in google-genai and other heavy API dependencies not needed here.
 from shared.exam_paths import find_latest_cleaned_scan  # noqa: E402
 from shared.load_student_list import read_student_list  # noqa: E402
+
+
+def fuzzy_match_name(extracted_name: str, students: list[str]) -> str | None:
+    """Pure-stdlib fuzzy match — mirrors extraction/ground_truth.py."""
+    from difflib import SequenceMatcher
+
+    if not extracted_name or extracted_name in ("UNKNOWN", "EXTRACTION_ERROR"):
+        return None
+    low = extracted_name.lower().strip()
+    for n in students:
+        if n.lower() == low:
+            return n
+    for n in students:
+        nl = n.lower()
+        if low in nl or nl in low:
+            return n
+    best_name, best_ratio = None, 0.0
+    for n in students:
+        r = SequenceMatcher(None, low, n.lower()).ratio()
+        if r > best_ratio and r >= 0.6:
+            best_ratio, best_name = r, n
+    return best_name
 
 DEFAULT_DPI = 300
 DEFAULT_STRIP = (0.0, 0.0, 840.0, 125.0)
