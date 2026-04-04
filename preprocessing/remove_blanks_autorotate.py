@@ -21,6 +21,7 @@ from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     Progress,
+    SpinnerColumn,
     TaskProgressColumn,
     TextColumn,
     TimeElapsedColumn,
@@ -96,7 +97,6 @@ def process_pdf(
         format_duration,
         get_console,
         icon,
-        info_line,
         note_line,
         ok_line,
         warn_line,
@@ -129,6 +129,43 @@ def process_pdf(
         )
 
     _tc = os.cpu_count() or 4
+
+    def _raster_with_spinner(label: str, dpi: int, *, grayscale: bool) -> list:
+        path_s = str(input_path)
+        t0 = time.perf_counter()
+
+        def _run_convert() -> list:
+            return convert_from_path(
+                path_s,
+                dpi=dpi,
+                grayscale=grayscale,
+                thread_count=_tc,
+            )
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=c,
+            transient=False,
+        ) as progress:
+            tid = progress.add_task(f"{label} ({dpi} DPI) …", total=None)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                fut = pool.submit(_run_convert)
+                while not fut.done():
+                    time.sleep(0.05)
+            pages = fut.result()
+            progress.update(
+                tid,
+                completed=1,
+                total=1,
+                description=(
+                    f"[green]{icon('ok')} {label} ({dpi} DPI) · "
+                    f"{format_duration(time.perf_counter() - t0)}[/]"
+                ),
+            )
+        return pages
+
     if verbose:
         c.print(
             f"\n[bold cyan]  {icon('broom')}  Pass 1: blank detection @ {BLANK_DPI} DPI[/]"
@@ -140,15 +177,9 @@ def process_pdf(
             thread_count=_tc,
         )
     else:
-        info_line(f"Blank detection pass ({BLANK_DPI} DPI) …")
-        t_blank = time.perf_counter()
-        low_res_pages = convert_from_path(
-            str(input_path),
-            dpi=BLANK_DPI,
-            grayscale=True,
-            thread_count=_tc,
+        low_res_pages = _raster_with_spinner(
+            "Blank detection pass", BLANK_DPI, grayscale=True
         )
-        ok_line(f"Checked · {format_duration(time.perf_counter() - t_blank)}")
     total_pages = len(low_res_pages)
     if verbose:
         c.print(f"  Total pages: {total_pages}")
@@ -185,15 +216,9 @@ def process_pdf(
             thread_count=_tc,
         )
     else:
-        info_line(f"Rotation detection pass ({analysis_dpi} DPI) …")
-        t_osd = time.perf_counter()
-        hi_res_pages = convert_from_path(
-            str(input_path),
-            dpi=analysis_dpi,
-            grayscale=True,
-            thread_count=_tc,
+        hi_res_pages = _raster_with_spinner(
+            "Rotation detection pass", analysis_dpi, grayscale=True
         )
-        ok_line(f"Loaded · {format_duration(time.perf_counter() - t_osd)}")
 
     num_workers = min(_tc, len(content_page_nums))
     if verbose:
