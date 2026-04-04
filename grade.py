@@ -193,6 +193,21 @@ class _GradeCtx:
     grade_pages: list | None = None
     results: list[StudentResult] | None = None
     eval_data: dict | None = None
+    # Set only before SystemExit(0) from --through-step / prompt through_step
+    partial_stop_readme_step: int | None = None
+    # True only after full success (no through-step early exit)
+    pipeline_completed_ok: bool = False
+
+
+def _print_grade_run_footer(ctx: _GradeCtx, gi: SimpleNamespace, elapsed: float) -> None:
+    """Always print wall time; partial-run and full-run lines when applicable."""
+    human = gi.format_duration(elapsed)
+    gi.info_line(f"Total run time: {elapsed:.1f} s ({human})")
+    if ctx.partial_stop_readme_step is not None:
+        n = ctx.partial_stop_readme_step
+        gi.info_line(f"Stopped after step {n} of 11 (partial run).")
+    elif ctx.pipeline_completed_ok:
+        gi.info_line("Completed all 11 pipeline steps.")
 
 
 def _load_grade_imports() -> SimpleNamespace:
@@ -322,6 +337,7 @@ def _grade_step01_parse(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     )
 
     if ctx.through_step == 1:
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
@@ -346,6 +362,7 @@ def _grade_step02_folder(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     ctx.run_dir = ctx.artifact_dir
     gi.ok_line(ctx.folder.name)
     if ctx.through_step == 2:
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
@@ -355,6 +372,7 @@ def _grade_step03_students(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     ctx.students = gi.read_student_list(ctx.folder)
     gi.ok_line(f"{len(ctx.students)} students on the roster")
     if ctx.through_step == 3:
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
@@ -375,6 +393,7 @@ def _grade_step04_scaffold(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     ctx.scaffold = gi.build_scaffold(ctx.folder, client=ctx.client, artifact_dir=ctx.artifact_dir)
     gi.print_scaffold_summary(ctx.scaffold)
     if ctx.through_step == 4:
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
@@ -407,6 +426,7 @@ def _grade_step05_clean_scan(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
             artifact_dir=ctx.artifact_dir,
         )
     if ctx.through_step == 5:
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
@@ -441,6 +461,7 @@ def _grade_step06_page_assignment(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     )
     gi.print_page_summary(ctx.page_map, ctx.students)
     if ctx.through_step == 6:
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
     if not ctx.page_map:
@@ -483,6 +504,7 @@ def _grade_step07_detect(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     if ctx.through_step == 7:
         if ctx.grade_render_ex is not None:
             ctx.grade_render_ex.shutdown(wait=False, cancel_futures=True)
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
@@ -519,6 +541,7 @@ def _grade_step08_09_grade(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     gi.print_results_table(ctx.results, ctx.scaffold)
     gi.print_grand_summary(ctx.results)
     if ctx.through_step in (8, 9):
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
@@ -539,6 +562,7 @@ def _grade_step10_eval(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         gi.info_line("No reference list in the exam folder — skipped.")
 
     if ctx.through_step == 10:
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
 
@@ -563,25 +587,31 @@ def _grade_step11_report(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         gi.info_line("PDF report skipped (you turned it off).")
     if ctx.through_step == 11:
         gi.ok_line("Pipeline complete.")
+        ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
     gi.ok_line("Grading pipeline finished.")
+    ctx.pipeline_completed_ok = True
 
 
 def _run(args: argparse.Namespace, timestamp: str) -> None:
     gi = _load_grade_imports()
     ctx = _GradeCtx(args=args, timestamp=timestamp)
-    _grade_create_client(ctx, gi)
-    _grade_step01_parse(ctx, gi)
-    _grade_step02_folder(ctx, gi)
-    _grade_step03_students(ctx, gi)
-    _grade_step04_scaffold(ctx, gi)
-    _grade_step05_clean_scan(ctx, gi)
-    _grade_step06_page_assignment(ctx, gi)
-    _grade_step07_detect(ctx, gi)
-    _grade_step08_09_grade(ctx, gi)
-    _grade_step10_eval(ctx, gi)
-    _grade_step11_report(ctx, gi)
+    t0 = time.perf_counter()
+    try:
+        _grade_create_client(ctx, gi)
+        _grade_step01_parse(ctx, gi)
+        _grade_step02_folder(ctx, gi)
+        _grade_step03_students(ctx, gi)
+        _grade_step04_scaffold(ctx, gi)
+        _grade_step05_clean_scan(ctx, gi)
+        _grade_step06_page_assignment(ctx, gi)
+        _grade_step07_detect(ctx, gi)
+        _grade_step08_09_grade(ctx, gi)
+        _grade_step10_eval(ctx, gi)
+        _grade_step11_report(ctx, gi)
+    finally:
+        _print_grade_run_footer(ctx, gi, time.perf_counter() - t0)
 
 
 if __name__ == "__main__":
