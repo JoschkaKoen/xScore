@@ -73,6 +73,29 @@ def _rotation_worker(args: tuple[int, Image.Image]) -> tuple[int, int]:
     return page_num, detect_rotation(pil_img)
 
 
+def _raster_with_spinner(label: str, fn, *, console) -> list:
+    """Run *fn()* in a background thread, show a spinner, return the result."""
+    from shared.terminal_ui import format_duration, ok_line
+
+    t0 = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(fn)
+        with Progress(
+            TextColumn("  "),
+            SpinnerColumn(),
+            TextColumn("  {task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as prog:
+            prog.add_task(label, total=None)
+            while not future.done():
+                time.sleep(0.05)
+    result = future.result()
+    ok_line(f"{label} · {format_duration(time.perf_counter() - t0)}")
+    return result
+
+
 def process_pdf(
     input_path: str,
     output_path: str,
@@ -94,7 +117,6 @@ def process_pdf(
     from shared.terminal_ui import (
         PROGRESS_TASK_TEXT,
         err_line,
-        format_duration,
         get_console,
         icon,
         note_line,
@@ -129,43 +151,6 @@ def process_pdf(
         )
 
     _tc = os.cpu_count() or 4
-
-    def _raster_with_spinner(label: str, dpi: int, *, grayscale: bool) -> list:
-        path_s = str(input_path)
-        t0 = time.perf_counter()
-
-        def _run_convert() -> list:
-            return convert_from_path(
-                path_s,
-                dpi=dpi,
-                grayscale=grayscale,
-                thread_count=_tc,
-            )
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            console=c,
-            transient=False,
-        ) as progress:
-            tid = progress.add_task(f"{label} ({dpi} DPI) …", total=None)
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                fut = pool.submit(_run_convert)
-                while not fut.done():
-                    time.sleep(0.05)
-            pages = fut.result()
-            progress.update(
-                tid,
-                completed=1,
-                total=1,
-                description=(
-                    f"[green]{icon('ok')} {label} ({dpi} DPI) · "
-                    f"{format_duration(time.perf_counter() - t0)}[/]"
-                ),
-            )
-        return pages
-
     if verbose:
         c.print(
             f"\n[bold cyan]  {icon('broom')}  Pass 1: blank detection @ {BLANK_DPI} DPI[/]"
@@ -178,7 +163,9 @@ def process_pdf(
         )
     else:
         low_res_pages = _raster_with_spinner(
-            "Blank detection pass", BLANK_DPI, grayscale=True
+            f"Blank detection ({BLANK_DPI} DPI)",
+            lambda: convert_from_path(str(input_path), dpi=BLANK_DPI, grayscale=True, thread_count=_tc),
+            console=c,
         )
     total_pages = len(low_res_pages)
     if verbose:
@@ -217,7 +204,9 @@ def process_pdf(
         )
     else:
         hi_res_pages = _raster_with_spinner(
-            "Rotation detection pass", analysis_dpi, grayscale=True
+            f"Rotation detection ({analysis_dpi} DPI)",
+            lambda: convert_from_path(str(input_path), dpi=analysis_dpi, grayscale=True, thread_count=_tc),
+            console=c,
         )
 
     num_workers = min(_tc, len(content_page_nums))
