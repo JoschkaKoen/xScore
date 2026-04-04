@@ -5,29 +5,8 @@ alwaysApply: true
 
 # Human-Readable Communication
 
-Write every response so that someone new to the project can follow it without effort.
-
-## Language & Structure
-
-- Use **plain English**. Avoid jargon, acronyms, or academic phrasing unless the term has already been introduced.
-- Lead with the **most important point**. Put context and caveats after, not before.
-- Use **short sentences**. One idea per sentence.
-- Break explanations into **numbered steps** or **bullet points** when there are multiple things happening — never dump a wall of prose.
-
-## Explanations for Code Changes
-
-- Before showing code, state **what** is being changed and **why** in 1–2 sentences.
-- After a code block, briefly note **what to watch out for** or **what changed** if it is not obvious.
-- If a concept is non-trivial (e.g. a tricky algorithm or design decision), add a plain-English analogy or a one-line explanation of the idea.
-
-## Tone
-
-- Friendly and direct — like explaining to a smart colleague, not writing documentation.
-- Never condescending. Assume the reader is intelligent but may not know this specific corner.
-- Skip unnecessary filler phrases ("Certainly!", "Great question!", "Of course!").
-
-## What to Avoid
-
-- Do **not** restate what the user just said back to them.
-- Do **not** use raw data dumps, unformatted JSON, or wall-of-text outputs without structure.
-- Do **not** hide the answer inside a long preamble — get to the point first.
+- Lead with the answer, context comes after.
+- Short sentences. Bullets or numbered steps for anything multi-part.
+- Plain English — no jargon without introduction, no filler ("Certainly!", "Great question!").
+- Before showing code: one sentence on *what* changes and *why*.
+- No raw data dumps or wall-of-text prose.
