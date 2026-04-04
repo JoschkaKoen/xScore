@@ -578,8 +578,8 @@ def deskew_pdf_raster(
     )
 
     from shared.terminal_ui import (
+        CompactElapsedColumn,
         PROGRESS_TASK_TEXT,
-        ElapsedSecondsColumn,
         format_duration,
         get_console,
         info_line,
@@ -642,8 +642,7 @@ def deskew_pdf_raster(
                 TextColumn(PROGRESS_TASK_TEXT),
                 BarColumn(bar_width=28),
                 TaskProgressColumn(),
-                TextColumn("  ", style="dim"),
-                ElapsedSecondsColumn(),
+                CompactElapsedColumn(),
                 console=c,
                 transient=False,
                 padding=(0, 0),
