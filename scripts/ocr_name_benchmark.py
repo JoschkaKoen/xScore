@@ -29,6 +29,7 @@ import numpy as np
 from PIL import Image
 from rich.console import Console
 from rich.markup import escape
+from rich.panel import Panel
 from rich.table import Table
 
 # Repo root for imports when run as a script
@@ -153,24 +154,33 @@ def run_paddleocr(cv2_img: np.ndarray) -> str:
 
     ocr = run_paddleocr._ocr  # type: ignore[attr-defined]
     try:
-        result = ocr.ocr(cv2_img, cls=True)
+        result = ocr.predict(cv2_img)
     except Exception as exc:  # noqa: BLE001 — surface Paddle API/version issues
         return f"[paddleocr error: {exc}]"
 
-    if not result or result == [None]:
+    if not result:
         return ""
 
     fragments: list[str] = []
     for page_result in result:
         if page_result is None:
             continue
+        # New predict() API: list of dicts with "rec_text" / "rec_score" keys
+        if isinstance(page_result, dict):
+            texts = page_result.get("rec_text") or page_result.get("text") or []
+            scores = page_result.get("rec_score") or page_result.get("score") or []
+            for text, score in zip(texts, scores or [1.0] * len(texts)):
+                if float(score) >= 0.3:
+                    fragments.append(str(text))
+            continue
+        # Legacy ocr() API: list of [box, [text, conf]]
         for line in page_result:
-            if len(line) < 2:
+            if not isinstance(line, (list, tuple)) or len(line) < 2:
                 continue
-            _box, payload = line[0], line[1]
+            payload = line[1]
             if isinstance(payload, (list, tuple)) and len(payload) >= 2:
                 text, conf = payload[0], payload[1]
-                if conf >= 0.3:
+                if float(conf) >= 0.3:
                     fragments.append(str(text))
     return " ".join(fragments)
 
@@ -216,6 +226,7 @@ def benchmark(
     ]
 
     rows: list[tuple[str, str, str, str]] = []
+    raw_texts: list[tuple[str, str]] = []
 
     for name, fn in engines:
         t0 = time.perf_counter()
@@ -229,27 +240,31 @@ def benchmark(
             match_s = "—"
         else:
             matched = fuzzy_match_name(raw_s.strip(), students)
-            match_s = matched if matched is not None else "no match"
-        # Collapse newlines so Rich doesn't split the cell across multiple rows.
-        raw_one_line = " | ".join(line.strip() for line in raw_s.splitlines() if line.strip())
-        raw_display = raw_one_line if len(raw_one_line) <= 90 else raw_one_line[:87] + "..."
-        # Rich treats "[" as markup; escape so "[not installed]" messages are visible.
-        rows.append((name, escape(raw_display), match_s, format_duration(elapsed)))
+            match_s = f"[green]{matched}[/green]" if matched else "[yellow]no match[/yellow]"
+        rows.append((name, match_s, format_duration(elapsed)))
+        raw_texts.append((name, raw_s))
 
     table = Table(title="OCR name benchmark", show_header=True, header_style="bold")
     table.add_column("Engine", style="cyan", no_wrap=True)
-    table.add_column("Raw OCR", no_wrap=True)
-    table.add_column("Match")
+    table.add_column("Best match")
     table.add_column("Time", justify="right")
 
     for r in rows:
         table.add_row(*r)
 
     console.print(table)
+    console.print()
+
+    for engine_name, raw_s in raw_texts:
+        console.print(Panel(
+            escape(raw_s) if raw_s else "[dim](empty)[/dim]",
+            title=f"[cyan]{engine_name}[/cyan] — raw output",
+            expand=True,
+        ))
+
     console.print(
-        "\n[dim]Times include lazy init on first EasyOCR/PaddleOCR use in this process. "
-        "Fuzzy matching is not timed.[/dim]\n"
-        "[dim]If EasyOCR or PaddleOCR are not installed in this Python, run: "
+        "\n[dim]Times include lazy init on first EasyOCR/PaddleOCR use in this process.[/dim]\n"
+        "[dim]If EasyOCR or PaddleOCR are missing, run: "
         "`source paddle_env/bin/activate` (see scripts/install_paddleocr.sh).[/dim]"
     )
 
