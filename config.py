@@ -75,6 +75,14 @@ PDF_DPI = 300
 # JPEG quality for image encoding (0-100). Higher = better quality, larger size.
 JPEG_QUALITY = 95
 
+# Page images embedded in cleaned_scan.pdf after deskew (see preprocessing/deskew.py).
+#   "jpeg" — faster write, smaller file, lossy (uses CLEANED_SCAN_JPEG_QUALITY).
+#   "png"  — lossless; still written with parallel encoding (slower than jpeg).
+# Change default by editing the getenv second argument, or set CLEANED_SCAN_EMBED_FORMAT.
+_csef = os.getenv("CLEANED_SCAN_EMBED_FORMAT", "jpeg").strip().lower()
+CLEANED_SCAN_EMBED_FORMAT: str = _csef if _csef in ("jpeg", "png") else "jpeg"
+CLEANED_SCAN_JPEG_QUALITY = int(os.getenv("CLEANED_SCAN_JPEG_QUALITY", "95"))
+
 # Fraction of page to crop from top. 0.6 = top 60% of page.
 # The answer section is typically in the top half of the page.
 CROP_TOP_FRACTION = 0.6

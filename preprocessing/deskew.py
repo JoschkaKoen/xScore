@@ -718,20 +718,29 @@ def deskew_pdf_raster(
         info_line("Writing cleaned scan …")
         t_write = time.perf_counter()
 
-    doc = fitz.open()
-    for i in range(n):
-        pil_img, *_ = results[i]
-        buf = io.BytesIO()
-        pil_img.save(buf, format="PNG")
-        png_bytes = buf.getvalue()
+    from config import CLEANED_SCAN_EMBED_FORMAT, CLEANED_SCAN_JPEG_QUALITY
 
-        w_px, h_px = pil_img.size
-        pt_per_px = 72.0 / dpi
+    def _encode_cleaned_scan_page(page_idx: int) -> tuple[int, bytes, tuple[int, int]]:
+        pil_img, *_ = results[page_idx]
+        buf = io.BytesIO()
+        if CLEANED_SCAN_EMBED_FORMAT == "png":
+            pil_img.save(buf, format="PNG")
+        else:
+            pil_img.save(buf, format="JPEG", quality=CLEANED_SCAN_JPEG_QUALITY)
+        return page_idx, buf.getvalue(), pil_img.size
+
+    with ThreadPoolExecutor(max_workers=num_workers) as ex:
+        encoded = list(ex.map(_encode_cleaned_scan_page, range(n)))
+    encoded.sort(key=lambda t: t[0])
+
+    doc = fitz.open()
+    pt_per_px = 72.0 / dpi
+    for _idx, stream_bytes, (w_px, h_px) in encoded:
         page = doc.new_page(width=w_px * pt_per_px, height=h_px * pt_per_px)
         rect = fitz.Rect(0, 0, w_px * pt_per_px, h_px * pt_per_px)
-        page.insert_image(rect, stream=png_bytes)
-
-    doc.save(str(output_pdf), deflate=True)
+        page.insert_image(rect, stream=stream_bytes)
+    # Image streams (JPEG / PNG) are already compressed; skip extra document-level zlib.
+    doc.save(str(output_pdf), deflate=False)
     doc.close()
 
     if not verbose:
