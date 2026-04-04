@@ -551,7 +551,7 @@ def deskew_pdf_raster(
             per page).  Defaults to :func:`anchors_sidecar_path` applied to
             *output_pdf*.  Use this when *output_pdf* is a temp file but the sidecar
             should use the final stem (e.g. ``cleaned_scan_anchors.json``).
-        verbose: When False (e.g. ``grade.py`` pipeline), print only summaries instead
+        verbose: When False (e.g. ``xscore.py`` pipeline), print only summaries instead
             of per-page angle, line, and anchor lines.
         saved_as: If set, compact-mode success line shows this filename (e.g. final
             ``cleaned_scan.pdf``) when *output_pdf* is a temp path.

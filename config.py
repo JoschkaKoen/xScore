@@ -2,7 +2,7 @@
 """
 config.py
 ---------
-Configuration for Auto-Grader. Edit values here or set the noted environment
+Configuration for xScore. Edit values here or set the noted environment
 variables. See README.md for full detail.
 
 How to run (from repo root, with venv activated and dependencies installed):
@@ -16,12 +16,12 @@ How to run (from repo root, with venv activated and dependencies installed):
     source .venv/bin/activate
 
   Grade an exam folder from a natural-language prompt (uses Kimi only; KIMI_API_KEY):
-    python grade.py "check all multiple choice question answers"
-    python grade.py "..." --folder "path/to/exam_folder"
+    python xscore.py "check all multiple choice question answers"
+    python xscore.py "..." --folder "path/to/exam_folder"
     # Optional CLI (also inferable from prompt JSON): --dpi  --folder  --skip-clean-scan
     #   --force-clean-scan  --rescaffold  --through-step N  --no-report
 
-Tunables below apply to extraction/, the other top-level packages, and grade.py
+Tunables below apply to extraction/, the other top-level packages, and xscore.py
 (PIPELINE_*, NAME_*, etc.).
 """
 
@@ -43,7 +43,7 @@ from typing import Any
 # To change the model, either:
 #   1. Edit the line below, OR
 #   2. Set AI_MODEL environment variable (takes precedence)
-# Scope: extraction/benchmarking (extraction/providers/kimi.py, Gemini path) — not grade.py marking.
+# Scope: extraction/benchmarking (extraction/providers/kimi.py, Gemini path) — not xscore.py marking.
 AI_MODEL = os.getenv("AI_MODEL", "kimi-k2.5")
 
 # Exam layout + prompt + schema (see extraction/profiles/)
@@ -165,7 +165,7 @@ DEFAULT_PDF = "Space Physics Unit Test/scan 400dpi.pdf"
 GROUND_TRUTH_PATH = Path(__file__).resolve().parent / "Ground Truth "
 
 # =============================================================================
-# Generic Pipeline Configuration (grade.py)
+# Generic Pipeline Configuration (xscore.py)
 # =============================================================================
 
 # DPI used when rendering pages for the main grading pass
@@ -177,7 +177,7 @@ NAME_RECOGNITION_DPI = 200
 # Fraction of the page height to crop for name detection (top strip only)
 NAME_CROP_FRACTION = 0.15
 
-# AI model used by grade.py marking (parse_prompt, assign_pages, grade_answers, etc.).
+# AI model used by xscore.py marking (parse_prompt, assign_pages, grade_answers, etc.).
 # Can differ from AI_MODEL above; override with PIPELINE_AI_MODEL env.
 PIPELINE_AI_MODEL = "kimi-k2.5"
 

@@ -143,7 +143,7 @@ class CompactElapsedColumn(ProgressColumn):
 
 
 def get_console() -> Console:
-    """Console writing to current ``sys.stdout`` (works with ``grade.py`` tee)."""
+    """Console writing to current ``sys.stdout`` (works with ``xscore.py`` tee)."""
     uc = use_color()
     return Console(
         file=sys.stdout,

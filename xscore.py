@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-grade.py
---------
+xscore.py
+---------
 Generic exam grading CLI — works on any exam, driven by a natural language prompt.
 
 Usage:
-    python grade.py "check all multiple choice question answers"
-    python grade.py "count marks for each student" --folder "Space Physics Unit Test"
-    python grade.py "check the first 5 students' answers" --dpi 300
-    python grade.py "check answers for Alice and Bob" --folder "Maths Mock"
+    python xscore.py "check all multiple choice question answers"
+    python xscore.py "count marks for each student" --folder "Space Physics Unit Test"
+    python xscore.py "check the first 5 students' answers" --dpi 300
+    python xscore.py "check answers for Alice and Bob" --folder "Maths Mock"
 
 The program will:
   1. Parse the natural language prompt into structured instructions (via Kimi).
@@ -75,7 +75,7 @@ class _Tee:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="grade.py",
+        prog="xscore.py",
         description="Grade any exam from a natural language prompt.",
     )
     parser.add_argument(
@@ -154,7 +154,7 @@ def main() -> None:
     c.print()
     c.print(
         Rule(
-            f"[bold blue]{icon('spark')}  grade.py  —  Auto-Grader {__version__}[/]",
+            f"[bold blue]{icon('spark')}  xScore  —  {__version__}[/]",
             style="blue",
         )
     )
@@ -167,7 +167,7 @@ def main() -> None:
 
 @dataclass
 class _GradeCtx:
-    """Mutable state passed through private pipeline steps (``grade.py``)."""
+    """Mutable state passed through private pipeline steps (``xscore.py``)."""
 
     args: argparse.Namespace
     timestamp: str

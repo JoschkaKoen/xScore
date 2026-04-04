@@ -50,7 +50,7 @@ def write_projected_scaffold_debug_pdf(
     """Project scaffold bboxes onto *deskewed_pdf* using 4-up anchors + reflines JSON.
 
     *artifact_dir*: scaffold cache location (defaults to :func:`exam_artifact_dir` for the exam).
-    Pass the same directory as ``grade.py`` / ``start_scan.cleanup_pdf`` so overlays match the current run.
+    Pass the same directory as ``xscore.py`` / ``start_scan.cleanup_pdf`` so overlays match the current run.
     """
     from preprocessing.deskew import resolve_deskew_sidecar
     from scaffold.project_boxes_on_scanned_exam import find_raw_four_up_pdf, overlay_projected_scaffold_on_scan_pdf

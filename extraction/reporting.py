@@ -89,7 +89,7 @@ def generate_report_pdf(results: list[dict], output_tex: Path, output_report: Pa
 \\setCJKmainfont{{PingFang SC Regular}}[BoldFont=PingFang SC Semibold]
 
 \\title{{Student Answers Report}}
-\\author{{Auto-Grader}}
+\\author{{xScore}}
 \\date{{\\today}}
 
 \\begin{{document}}

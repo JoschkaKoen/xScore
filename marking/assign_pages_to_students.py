@@ -52,7 +52,7 @@ def assign_pages(
     """Return a ``PageAssignment`` for every student whose pages were found.
 
     If *client* is None it is created via ``KimiProvider.create_client()``.
-    *verbose*: when False (``grade.py``), log only sparse progress instead of every page.
+    *verbose*: when False (``xscore.py``), log only sparse progress instead of every page.
     *pages*: optional pre-rendered page images at *dpi* (skips ``convert_from_path``).
     """
     from extraction.ground_truth import fuzzy_match_name

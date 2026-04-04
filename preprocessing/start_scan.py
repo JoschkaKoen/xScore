@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-# Phased pipeline artifacts (steps 5–8 in grade.py README).
+# Phased pipeline artifacts (steps 5–8 in xscore.py README).
 SCAN_BLANKS_JSON = "scan_blanks.json"
 SCAN_ROTATED_PDF = "scan_rotated.pdf"
 CLEANED_SCAN_PDF = "cleaned_scan.pdf"
@@ -218,7 +218,7 @@ def cleanup_pdf(
 
     Runs the full phased pipeline internally (detect blanks → autorotate → deskew →
     transformation overlay). For partial runs, use the individual ``*_phase`` functions
-    from :mod:`grade.py`.
+    from the ``xscore.py`` CLI.
     """
     from shared.exam_paths import exam_artifact_dir
 

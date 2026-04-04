@@ -256,7 +256,7 @@ def _full_document(
 \setCJKmainfont{{PingFang SC Regular}}[BoldFont=PingFang SC Semibold]
 
 \title{{{_esc(title)}}}
-\author{{Auto-Grader}}
+\author{{xScore}}
 \date{{{date_str}}}
 
 \begin{{document}}

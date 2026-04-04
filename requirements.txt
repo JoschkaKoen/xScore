@@ -1,4 +1,4 @@
-# Auto-Grader — Python dependencies
+# xScore — Python dependencies
 # Install: pip install -r requirements.txt  (preferably inside a virtual environment)
 
 pdf2image>=1.17.0
