@@ -123,7 +123,7 @@ def print_scaffold_summary(scaffold: ExamScaffold) -> None:
         show_header=True,
         header_style="bold cyan",
         title=(
-            f"{icon('gear')}  Exam scaffold  —  {len(leaves)} questions, {scaffold.total_marks} marks"
+            f"  {icon('gear')}  Exam scaffold  —  {len(leaves)} questions, {scaffold.total_marks} marks"
         ),
         title_style="bold cyan",
         expand=False,

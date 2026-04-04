@@ -597,7 +597,7 @@ def deskew_pdf_raster(
         )
         pages = convert_from_path(str(input_pdf), **_pdf_kw)
     else:
-        c.print(f"  [dim]›[/]  [bold]Deskew:[/]  {input_pdf.name}  ·  {dpi} DPI")
+        c.print(f"  [dim]›[/]  [bold]Aligning pages[/]")
         with c.status(
             "  [bold]1/4[/]  Loading PDF pages as images…",
             spinner="dots",
@@ -656,7 +656,7 @@ def deskew_pdf_raster(
     # Bootstrap IGCSE template from page 0 top half (Tesseract, runs once)
     _phase3 = (
         c.status(
-            "  [bold]3/4[/]  Locating printed header markers on each page…",
+            "  [bold]3/4[/]  Detecting page layout …",
             spinner="dots",
         )
         if not verbose
@@ -718,11 +718,11 @@ def deskew_pdf_raster(
             f"Sidecar (anchors + vertical ref-lines) → {sidecar_path.name}",
         )
     elif not verbose:
-        c.print("  [green]✓[/]  [bold]3/4[/]  Header markers located")
+        c.print("  [green]✓[/]  [bold]3/4[/]  Page layout detected")
 
     _phase4 = (
         c.status(
-            "  [bold]4/4[/]  Building the deskewed PDF…",
+            "  [bold]4/4[/]  Saving …",
             spinner="dots",
         )
         if not verbose
@@ -748,8 +748,7 @@ def deskew_pdf_raster(
     out_label = saved_as if saved_as is not None else output_pdf.name
     if not verbose:
         c.print(
-            f"  [green]✓[/]  [bold]4/4[/]  Deskew saved  "
-            f"[dim]·  {n} pages @ {dpi} DPI  ·  {out_label}[/]"
+            f"  [green]✓[/]  [bold]4/4[/]  All {n} pages aligned"
         )
     else:
         ref_ok = sum(

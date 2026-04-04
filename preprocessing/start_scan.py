@@ -101,7 +101,7 @@ def cleanup_pdf(
                     pass
         return output
 
-    tool_line("start_scan", f"Cleaning scan: {match.name} → {output.name}")
+    tool_line("start_scan", f"Cleaning: {match.name}")
     process_pdf(
         input_path=str(match),
         output_path=str(output),

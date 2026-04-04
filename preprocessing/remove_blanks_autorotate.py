@@ -202,9 +202,9 @@ def process_pdf(
         for angle in sorted(angle_counts):
             n = angle_counts[angle]
             if angle == 0:
-                parts.append(f"{n} upright")
+                parts.append(f"{n} already upright")
             else:
-                parts.append(f"{n}×{angle}°")
+                parts.append(f"{n} rotated")
         rot_s = ", ".join(parts) if parts else "—"
 
     src_pdf = pikepdf.open(str(input_path))

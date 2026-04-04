@@ -221,15 +221,18 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     )
     no_report = args.no_report or instruction.no_report
 
-    _task_label = instruction.task_type.replace("_", " ")
+    _task_labels = {
+        "check_answers": "Grading",
+        "build_scaffold": "Building scaffold",
+        "clean_scan": "Cleaning scan",
+    }
+    _task_label = _task_labels.get(instruction.task_type, instruction.task_type.replace("_", " "))
     _students_label = (
         f"{len(instruction.student_filter.names)} students"
         if instruction.student_filter.mode == "named"
         else instruction.student_filter.mode
     )
     info_line(f"{_task_label}  ·  {_students_label}  ·  {instruction.dpi} DPI")
-    if through_step is not None:
-        info_line(f"Stopping after step {through_step}")
 
     if through_step == 1:
         raise SystemExit(0)
@@ -256,7 +259,7 @@ def _run(args: argparse.Namespace, timestamp: str) -> None:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     # Reports and all derived files for this invocation live in the same run folder.
     run_dir = artifact_dir
-    note_line(f"Results folder: {artifact_dir}")
+    note_line(f"Results: {artifact_dir}")
     if through_step == 2:
         raise SystemExit(0)
 
