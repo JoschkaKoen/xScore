@@ -84,7 +84,7 @@ def _raster_with_spinner(label: str, fn, *, console) -> list:
         with Progress(
             TextColumn(" "),
             SpinnerColumn(),
-            TextColumn("  {task.description}"),
+            TextColumn(" {task.description}"),
             CompactElapsedColumn(),
             console=console,
             transient=True,
