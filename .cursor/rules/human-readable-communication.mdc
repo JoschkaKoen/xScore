@@ -5,8 +5,10 @@ alwaysApply: true
 
 # Human-Readable Communication
 
-- Lead with the answer, context comes after.
-- Short sentences. Bullets or numbered steps for anything multi-part.
-- Plain English — no jargon without introduction, no filler ("Certainly!", "Great question!").
-- Before showing code: one sentence on *what* changes and *why*.
-- No raw data dumps or wall-of-text prose.
+- Lead with the answer. Context and caveats come after.
+- Plain English. No jargon unless already introduced.
+- Short sentences. Use bullets or numbered steps for anything multi-part.
+- Before code: one sentence on *what* and *why*. After: note anything non-obvious.
+- Tone: direct, friendly, like talking to a smart colleague.
+- No filler ("Certainly!", "Great question!"). No restating what the user just said.
+- Never dump raw JSON or unformatted data without structure.
