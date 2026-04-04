@@ -186,12 +186,14 @@ def process_pdf(
         )
     else:
         info_line(f"Rotation detection pass ({analysis_dpi} DPI) …")
+        t_osd = time.perf_counter()
         hi_res_pages = convert_from_path(
             str(input_path),
             dpi=analysis_dpi,
             grayscale=True,
             thread_count=_tc,
         )
+        ok_line(f"Loaded · {format_duration(time.perf_counter() - t_osd)}")
 
     num_workers = min(_tc, len(content_page_nums))
     if verbose:
