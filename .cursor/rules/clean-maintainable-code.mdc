@@ -7,41 +7,17 @@ alwaysApply: true
 
 Self-review every change before presenting it:
 
-1. **Correctness** — edge cases covered (None, empty, off-by-one, type mismatch)?
-2. **Bugs** — typos, wrong variable, inverted condition, missing `return`/`await`?
-3. **Simplicity** — can any block be a cleaner built-in or helper?
+1. **Correctness** — edge cases covered (null/empty, off-by-one, type mismatch)?
+2. **Bugs** — typos, wrong variable, inverted condition, missing return?
+3. **Simplicity** — can any block be simplified or replaced by a well-named helper?
 4. **Duplication** — extract repeated logic; don't copy-paste.
-5. **Naming** — names say *what*, not *how* (`load_pages` not `do_stuff`).
-6. **Dead code** — remove unused imports, variables, commented-out blocks.
-7. **Error handling** — no bare `except: pass`; surface failures clearly.
-
-## Style
-
-- One function, one job. >40 lines → split it.
-- Guard clauses first, happy path last.
-- Named constants, not magic numbers (`MAX_RETRIES = 3`).
-- Comments explain *why*, never *what*.
+5. **Naming** — names say *what*, not *how*.
+6. **Dead code** — remove unused variables, imports, and commented-out blocks.
+7. **Error handling** — failures are surfaced clearly; never silently swallowed.
+8. **Single responsibility** — one function/class, one job. Split if it grows too large.
 
 ## Refactoring
 
 - Keep the public interface unless explicitly asked to change it.
 - Edit the smallest region possible; don't reformat unrelated lines.
 - Fix pre-existing bugs found nearby and call them out.
-
-```python
-# BAD
-def proc(d):
-    try:
-        return d["val"] * 1.15
-    except:
-        pass
-
-# GOOD
-TAX_RATE = 1.15
-
-def apply_tax(record: dict) -> float | None:
-    try:
-        return record["value"] * TAX_RATE
-    except KeyError:
-        return None
-```
