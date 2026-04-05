@@ -654,6 +654,7 @@ def deskew_pdf_raster(
 
     results: dict[int, _PageResult] = {}
 
+    t_angle = time.perf_counter()
     with ThreadPoolExecutor(max_workers=num_workers) as ex:
         futures = {
             ex.submit(_process_page, (i, pages[i])): i
@@ -662,6 +663,7 @@ def deskew_pdf_raster(
         for fut in as_completed(futures):
             page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
             results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
+    ok_line(f"Correcting angle · {format_duration(time.perf_counter() - t_angle)}")
 
     # Build sidecar JSON (ordered by page index). IGCSE anchors filled in step 8.
     null_anchors = {
