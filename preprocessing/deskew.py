@@ -637,20 +637,7 @@ def deskew_pdf_raster(
             "then Path.replace() if you need to update the original path."
         )
 
-    from rich.progress import (
-        BarColumn,
-        Progress,
-        TaskProgressColumn,
-        TextColumn,
-    )
-
-    from shared.terminal_ui import (
-        CompactElapsedColumn,
-        PROGRESS_TASK_TEXT,
-        format_duration,
-        get_console,
-        ok_line,
-    )
+    from shared.terminal_ui import format_duration, get_console, ok_line
 
     c = get_console()
     _pdf_kw = dict(
@@ -662,7 +649,6 @@ def deskew_pdf_raster(
     t_load = time.perf_counter()
     pages = convert_from_path(str(input_pdf), **_pdf_kw)
     ok_line(f"Pages loaded · {format_duration(time.perf_counter() - t_load)}")
-    c.print()
     n = len(pages)
     num_workers = min(os.cpu_count() or 4, n)
 
@@ -673,19 +659,9 @@ def deskew_pdf_raster(
             ex.submit(_process_page, (i, pages[i])): i
             for i in range(n)
         }
-        with Progress(
-            TextColumn(PROGRESS_TASK_TEXT),
-            BarColumn(bar_width=28),
-            TaskProgressColumn(),
-            CompactElapsedColumn(),
-            console=c,
-            transient=False,
-        ) as prog:
-            task_id = prog.add_task("Correcting angle …", total=n)
-            for fut in as_completed(futures):
-                page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
-                results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
-                prog.advance(task_id)
+        for fut in as_completed(futures):
+            page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
+            results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
 
     # Build sidecar JSON (ordered by page index). IGCSE anchors filled in step 8.
     null_anchors = {
