@@ -87,7 +87,7 @@ After `source .venv/bin/activate`, use **`python3`** if your shell says `command
 | `--skip-clean-scan` | Skip class-scan prep; use `cleaned_scan.pdf` in the current run folder under `output/<exam_stem>/<run_id>/`, a legacy cleaned scan in the exam folder, or a `*scan*.pdf` there |
 | `--force-clean-scan` | Ignore `cleaned_scan.pdf` cache and run full clean + deskew again (not combinable with `--skip-clean-scan`) |
 | `--rescaffold` | Delete scaffold cache before building (force re-parse) |
-| `--through-step N` | Exit after pipeline step `N` (1–14); see table below |
+| `--through-step N` | Exit after pipeline step `N` (1–16); see table below |
 | `--no-report` | Print results to terminal only; skip LaTeX/PDF |
 
 The same options (except `--version`) can be implied by the **natural-language prompt**: Kimi returns JSON with fields such as `folder_path`, `skip_clean_scan`, `through_step`, etc. **CLI flags combine with OR** for booleans (`--skip-clean-scan` or prompt says “skip cleaning”). **`--folder`** and **`--dpi`** and **`--through-step`** override the prompt when you pass them.
@@ -112,14 +112,16 @@ When you run `xscore.py`, it executes these steps in order:
 | 4. Build scaffold | `scaffold/generate_scaffold.py` | Parses the exam PDF and answer key to produce a question tree with marks, bounding boxes, and correct answers (cached under the run directory) |
 | 5. Detect blank pages | `preprocessing/start_scan.py` | 72 DPI pass; writes `scan_blanks.json` under the run directory |
 | 6. Autorotate | `preprocessing/remove_blanks_autorotate.py` | Drops blanks, applies PDF `/Rotate` or Tesseract OSD; writes `scan_rotated.pdf` |
-| 7. Small angle correction | `preprocessing/deskew.py` | Per-half deskew; writes `cleaned_scan.pdf` and `cleaned_scan_anchors.json` |
-| 8. Calculate transformation | `preprocessing/draw_scaffold_bounding_boxes.py` | Projects scaffold boxes onto the scan (debug PDF when a 4-up raw exam is available); skipped with `--skip-clean-scan` |
-| 9. Assign pages | `marking/assign_pages_to_students.py` | Reads the name at the top of each scanned page with Kimi vision and maps pages to roster entries |
-| 10. Detect attempted questions | `marking/detect_answered_questions.py` | One Kimi call per page: asks which question numbers the student attempted; produces a per-student list used in step 11 to skip unanswered questions |
-| 11. Grade | `marking/grade_answers.py` | Grades only attempted questions. Three modes: `check_mc` (multiple choice), `check_answers` (all types), `count_marks` (tally teacher marks — step 10 filter ignored) |
-| 12. Print results | `reports/print_results.py` | Displays scaffold, page assignments, marks table, and accuracy in the terminal |
-| 13. Ground truth | `shared/load_ground_truth.py` | If a ground-truth file exists in the folder, computes and displays per-student accuracy |
-| 14. Generate report | `reports/generate_report.py` | Produces a LaTeX/PDF report with results table and class statistics; skipped with `--no-report` |
+| 7. Small angle correction | `preprocessing/deskew.py` | Per-half deskew; writes `cleaned_scan.pdf` and `cleaned_scan_anchors.json` (IGCSE anchor slots are filled in step 8) |
+| 8. Detect page anchors | `preprocessing/deskew.py` | Template-matches IGCSE headers into the sidecar; skipped with `--skip-clean-scan` |
+| 9. Calculate transformation | `scaffold/project_boxes_on_scanned_exam.py` | Writes `cleaned_scan_transforms.json` (4-up ↔ scan similarity per page) when a matching four-up raw exam exists |
+| 10. Project bounding boxes | `scaffold/project_boxes_on_scanned_exam.py` | Debug PDF `cleaned_scan_projected_boxes.pdf` from transforms (or legacy direct overlay); skipped with `--skip-clean-scan` |
+| 11. Detect student names | `marking/assign_pages_to_students.py` | Kimi vision on each page; maps pages to roster entries |
+| 12. Detect questions attempted | `marking/detect_answered_questions.py` | One Kimi call per page for attempted question numbers; used in step 13 to skip unanswered questions |
+| 13. Mark answers | `marking/grade_answers.py` | Grades only attempted questions (`check_mc` / `check_answers` / `count_marks`; count_marks ignores step 12 filter) |
+| 14. Compile results | `reports/print_results.py` | Prints page assignments, marks table, and summaries in the terminal |
+| 15. Check accuracy | `shared/load_ground_truth.py` | If a ground-truth file exists, compares and prints per-student accuracy |
+| 16. Compile report | `reports/generate_report.py` | LaTeX/PDF report; skipped with `--no-report` |
 
 ---
 
@@ -209,7 +211,7 @@ shared/              models, exam_paths, terminal_ui, load_student_list, load_gr
 
 [`shared/terminal_ui.py`](shared/terminal_ui.py) formats `xscore.py` progress. By default, step headers are **compact** (single line). Set **`PIPELINE_VERBOSE=1`** or **`GRADE_VERBOSE=1`** for wide step banners (`═` rules) and extra detail from some modules (e.g. Kimi connection line, extraction debug). Set **`PIPELINE_DEBUG_AI=1`** to log truncated model responses (first 500 characters) to stderr via the `autograder.ai` logger for marking and extraction Kimi calls.
 
-### Import reference (steps 1–14)
+### Import reference (steps 1–16)
 
 Same order as [Pipeline steps](#pipeline-steps); paths are Python packages (run from repo root).
 
@@ -219,13 +221,13 @@ Same order as [Pipeline steps](#pipeline-steps); paths are Python packages (run 
 | 2 | `marking.find_exam_folder` | `find_folder(...)` |
 | 3 | `shared.load_student_list` | `read_student_list(...)` |
 | 4 | `scaffold.generate_scaffold` | `build_scaffold(...)` |
-| 5–8 | `preprocessing.start_scan` | `detect_blank_pages_phase`, `autorotate_phase`, `deskew_phase`, `calculate_transformation_phase`; or `cleanup_pdf(...)` for a one-shot run |
-| 9 | `marking.assign_pages_to_students` | `assign_pages(...)` |
-| 10 | `marking.detect_answered_questions` | `detect_answered_exercises(...)` |
-| 11 | `marking.grade_answers` | `grade_students(...)` |
-| 12 | `reports.print_results` | `print_*` helpers |
-| 13 | `shared.load_ground_truth` | optional evaluation |
-| 14 | `reports.generate_report` | `generate_report(...)` |
+| 5–10 | `preprocessing.start_scan` | `detect_blank_pages_phase`, `autorotate_phase`, `deskew_phase`, `detect_page_anchors_phase`, `compute_transformation_phase`, `project_bounding_boxes_phase`; or `cleanup_pdf(...)` |
+| 11 | `marking.assign_pages_to_students` | `assign_pages(...)` |
+| 12 | `marking.detect_answered_questions` | `detect_answered_exercises(...)` |
+| 13 | `marking.grade_answers` | `grade_students(...)` |
+| 14 | `reports.print_results` | `print_*` helpers |
+| 15 | `shared.load_ground_truth` | optional evaluation |
+| 16 | `reports.generate_report` | `generate_report(...)` |
 
 ### Vector PDF parsing
 

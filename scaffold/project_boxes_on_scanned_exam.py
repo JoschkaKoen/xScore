@@ -120,6 +120,18 @@ class SimilarityTransform:
         return f"scale={self.scale:.4f} px/pt  tx={self.tx:.1f}  ty={self.ty:.1f}"
 
 
+def similarity_transform_to_dict(tf: SimilarityTransform) -> dict[str, float]:
+    return {"scale": tf.scale, "tx": tf.tx, "ty": tf.ty}
+
+
+def similarity_transform_from_dict(d: dict) -> SimilarityTransform:
+    return SimilarityTransform(
+        scale=float(d["scale"]),
+        tx=float(d["tx"]),
+        ty=float(d["ty"]),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Locate the vector 4-up exam PDF (IGCSE anchor geometry)
 # ---------------------------------------------------------------------------
@@ -526,6 +538,169 @@ def overlay_projected_scaffold_on_scan_pdf(
                     bot_tf,
                     scaffold_page=scaffold_page,
                     mid_y_pt=mid_y_pt,
+                ):
+                    x0, y0, x1, y1 = quad
+                    r = _half_page_px_to_page_rect(
+                        x0, y0, x1, y1, half, mid_px, px_to_pt
+                    )
+                    r = r.intersect(page.rect)
+                    if r.is_empty:
+                        continue
+                    if is_eq:
+                        eq_blank.append((r, color))
+                    else:
+                        exercise.append((r, color))
+
+            for r, color in exercise + eq_blank:
+                page.draw_rect(r, color=color, width=line_width)
+
+            n_drawn = len(exercise) + len(eq_blank)
+            total_rects += n_drawn
+            if verbose:
+                tool_line(
+                    "overlay",
+                    f"page {page_idx + 1}/{n_doc} · {n_drawn} rects "
+                    f"(exercise={len(exercise)} eq_blank={len(eq_blank)})",
+                )
+
+        doc.save(str(save_path), garbage=4, deflate=True)
+    finally:
+        doc.close()
+
+    if use_tmp:
+        save_path.replace(output_pdf)
+
+    if verbose:
+        ok_line(f"Overlay: {total_rects} boxes across {n_overlay} pages")
+    return output_pdf
+
+
+def write_scan_page_transforms_json(
+    raw_4up_pdf: Path,
+    reflines_json: Path,
+    output_json: Path,
+    *,
+    dpi: int,
+    mid_y_pt: float = _RAW_MID_Y_PT,
+    verbose: bool = True,
+) -> bool:
+    """Compute top/bot :class:`SimilarityTransform` per sidecar page; write JSON.
+
+    Returns ``False`` if any page lacks scan anchors or computation fails.
+    """
+    raw_4up_pdf = Path(raw_4up_pdf)
+    reflines_json = Path(reflines_json)
+    output_json = Path(output_json)
+    try:
+        raw_anchors = extract_raw_igcse_anchors(raw_4up_pdf)
+        sidecar: list[dict] = json.loads(reflines_json.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        from shared.terminal_ui import warn_line
+
+        warn_line(f"Could not load data for transforms JSON: {e}")
+        return False
+
+    pages_out: list[dict] = []
+    for entry in sidecar:
+        try:
+            top_tf, bot_tf = compute_page_transforms(raw_anchors, entry["anchors"])
+        except (ValueError, KeyError, TypeError):
+            from shared.terminal_ui import warn_line
+
+            warn_line(
+                "Skipping transforms JSON — incomplete scan anchors on at least one page "
+                "(run pipeline through step 8, or check template matching)."
+            )
+            return False
+        pages_out.append({
+            "page": int(entry["page"]),
+            "top": similarity_transform_to_dict(top_tf),
+            "bot": similarity_transform_to_dict(bot_tf),
+        })
+
+    payload = {"dpi": dpi, "mid_y_pt": mid_y_pt, "pages": pages_out}
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if verbose:
+        from shared.terminal_ui import ok_line
+
+        ok_line(f"Wrote {output_json.name} ({len(pages_out)} pages)")
+    return True
+
+
+def overlay_projected_scaffold_from_transforms_json(
+    deskewed_pdf: Path,
+    transforms_json: Path,
+    questions: list[Question],
+    output_pdf: Path,
+    *,
+    line_width: float = 0.9,
+    scaffold_page: int = 1,
+    mid_y_pt: float = _RAW_MID_Y_PT,
+    verbose: bool = True,
+) -> Path | None:
+    """Draw projected scaffold regions using a transforms file from step 9."""
+    deskewed_pdf = Path(deskewed_pdf)
+    transforms_json = Path(transforms_json)
+    output_pdf = Path(output_pdf)
+
+    try:
+        payload = json.loads(transforms_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        from shared.terminal_ui import warn_line
+
+        warn_line(f"Could not read transforms JSON: {e}")
+        return None
+
+    dpi = int(payload.get("dpi", 300))
+    file_mid = float(payload.get("mid_y_pt", mid_y_pt))
+    page_entries: list[dict] = payload.get("pages") or []
+    if not page_entries:
+        from shared.terminal_ui import warn_line
+
+        warn_line("Transforms JSON has no pages — skip projected overlay")
+        return None
+
+    px_to_pt = 72.0 / dpi
+    all_nodes = flatten_questions(questions)
+
+    from shared.terminal_ui import ok_line, tool_line, warn_line
+
+    use_tmp = output_pdf.resolve() == deskewed_pdf.resolve()
+    save_path = output_pdf.with_suffix(".bbox_overlay_tmp.pdf") if use_tmp else output_pdf
+
+    doc = fitz.open(str(deskewed_pdf))
+    try:
+        n_doc = len(doc)
+        n_tf = len(page_entries)
+        if n_tf != n_doc:
+            warn_line(
+                f"[bbox_overlay] transforms list has {n_tf} pages, PDF has {n_doc} "
+                f"— overlaying min({n_tf}, {n_doc}) pages"
+            )
+
+        total_rects = 0
+        n_overlay = min(n_doc, n_tf)
+        for page_idx in range(n_overlay):
+            page = doc[page_idx]
+            h_px = int(round(page.rect.height / px_to_pt))
+            mid_px = h_px // 2
+
+            pe = page_entries[page_idx]
+            top_tf = similarity_transform_from_dict(pe["top"])
+            bot_tf = similarity_transform_from_dict(pe["bot"])
+
+            exercise: list[tuple[fitz.Rect, tuple[float, float, float]]] = []
+            eq_blank: list[tuple[fitz.Rect, tuple[float, float, float]]] = []
+
+            for color_idx, node in enumerate(all_nodes):
+                for half, quad, color, is_eq in _projected_items_for_question_node(
+                    node,
+                    color_idx,
+                    top_tf,
+                    bot_tf,
+                    scaffold_page=scaffold_page,
+                    mid_y_pt=file_mid,
                 ):
                     x0, y0, x1, y1 = quad
                     r = _half_page_px_to_page_rect(

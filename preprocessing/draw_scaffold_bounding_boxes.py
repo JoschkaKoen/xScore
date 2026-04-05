@@ -53,7 +53,12 @@ def write_projected_scaffold_debug_pdf(
     Pass the same directory as ``xscore.py`` / ``start_scan.cleanup_pdf`` so overlays match the current run.
     """
     from preprocessing.deskew import resolve_deskew_sidecar
-    from scaffold.project_boxes_on_scanned_exam import find_raw_four_up_pdf, overlay_projected_scaffold_on_scan_pdf
+    from scaffold.project_boxes_on_scanned_exam import (
+        find_raw_four_up_pdf,
+        overlay_projected_scaffold_from_transforms_json,
+        overlay_projected_scaffold_on_scan_pdf,
+        write_scan_page_transforms_json,
+    )
     from shared.exam_paths import exam_artifact_dir
     from scaffold.generate_scaffold import _find_exam_pdf, build_scaffold
     from shared.terminal_ui import info_line, warn_line
@@ -104,17 +109,33 @@ def write_projected_scaffold_debug_pdf(
         return None
 
     out = deskewed_pdf.with_name(deskewed_pdf.stem + "_projected_boxes.pdf")
+    transforms_path = deskewed_pdf.with_name(deskewed_pdf.stem + "_transforms.json")
     try:
-        overlay_projected_scaffold_on_scan_pdf(
-            deskewed_pdf,
-            sidecar,
+        if write_scan_page_transforms_json(
             raw4,
-            roots,
-            out,
+            sidecar,
+            transforms_path,
             dpi=dpi,
             verbose=verbose,
-        )
-        return out
+        ):
+            overlay_projected_scaffold_from_transforms_json(
+                deskewed_pdf,
+                transforms_path,
+                roots,
+                out,
+                verbose=verbose,
+            )
+        else:
+            overlay_projected_scaffold_on_scan_pdf(
+                deskewed_pdf,
+                sidecar,
+                raw4,
+                roots,
+                out,
+                dpi=dpi,
+                verbose=verbose,
+            )
+        return out if out.is_file() else None
     except Exception as e:
         warn_line(f"Projected scaffold overlay failed: {e}")
         return None

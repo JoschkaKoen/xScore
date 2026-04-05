@@ -5,9 +5,10 @@ introduces independent sub-degree skew in each half, so angle detection and
 correction are performed **per half** and the halves are reassembled.
 
 The sidecar ``<stem>_anchors.json`` (next to the output PDF by default, or set
-via ``reflines_sidecar``) stores **IGCSE header anchor** positions per page and
-**vertical ruling lines** per half (``top`` / ``bot`` arrays from
-:func:`detect_reference_lines`, run after per-half deskew).  Older runs may still
+via ``reflines_sidecar``) stores **vertical ruling lines** per half (``top`` /
+``bot``) from :func:`detect_reference_lines`. **IGCSE header anchors** are written
+as ``null`` by :func:`deskew_pdf_raster` and filled later by
+:func:`detect_page_anchors_for_cleaned_scan` (pipeline step 8).  Older runs may still
 have ``<stem>_reflines.json``; :func:`resolve_deskew_sidecar` finds either.  *input_pdf*
 and *output_pdf* must differ — the source file is never overwritten in-place.
 
@@ -525,6 +526,102 @@ def resolve_deskew_sidecar(deskewed_pdf: Path) -> Path | None:
     return None
 
 
+def detect_page_anchors_for_cleaned_scan(
+    cleaned_pdf: Path,
+    sidecar_path: Path,
+    dpi: int,
+    *,
+    verbose: bool = False,
+) -> None:
+    """Template-match IGCSE headers on *cleaned_pdf* and write into *sidecar_path*.
+
+    Expects JSON from :func:`deskew_pdf_raster` with ``anchors`` keys present and
+    values ``null``. Updates the file in place (pipeline step 8).
+    """
+    cleaned_pdf = Path(cleaned_pdf)
+    sidecar_path = Path(sidecar_path)
+    if not cleaned_pdf.is_file():
+        raise FileNotFoundError(f"Missing cleaned scan: {cleaned_pdf}")
+    if not sidecar_path.is_file():
+        raise FileNotFoundError(f"Missing anchor sidecar: {sidecar_path}")
+
+    from shared.terminal_ui import (
+        format_duration,
+        get_console,
+        info_line,
+        ok_line,
+        tool_line,
+    )
+
+    c = get_console()
+    data: list[dict] = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    n_side = len(data)
+    if n_side == 0:
+        return
+
+    _pdf_kw = dict(
+        dpi=dpi,
+        grayscale=True,
+        thread_count=os.cpu_count() or 4,
+    )
+    if verbose:
+        c.print()
+        tool_line("anchors", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
+        pages = convert_from_path(str(cleaned_pdf), **_pdf_kw)
+    else:
+        info_line("Detecting page anchors …")
+        t0 = time.perf_counter()
+        pages = convert_from_path(str(cleaned_pdf), **_pdf_kw)
+        ok_line(f"Pages loaded · {format_duration(time.perf_counter() - t0)}")
+        c.print()
+
+    n = len(pages)
+    if n < n_side:
+        raise RuntimeError(
+            f"Sidecar lists {n_side} pages but PDF rendered {n} — cannot match anchors."
+        )
+
+    if verbose:
+        tool_line("anchors", "Extracting IGCSE template from page 1 …")
+    page0_gray = np.array(pages[0].convert("L"))
+    p0_mid = page0_gray.shape[0] // 2
+    igcse_template = extract_igcse_template(page0_gray[:p0_mid, :], verbose=verbose)
+
+    if verbose:
+        tool_line("anchors", "Matching IGCSE headers on each page …")
+    elif not verbose:
+        info_line("Matching IGCSE headers …")
+        t1 = time.perf_counter()
+
+    def _anc_dict(a: AnchorPoint | None) -> dict | None:
+        return asdict(a) if a is not None else None
+
+    for i in range(n_side):
+        page_gray = np.array(pages[i].convert("L"))
+        p_mid = page_gray.shape[0] // 2
+        tl, tr = detect_igcse_anchors(page_gray[:p_mid, :], igcse_template)
+        bl, br = detect_igcse_anchors(page_gray[p_mid:, :], igcse_template)
+        entry = data[i]
+        entry["anchors"] = {
+            "top_left": _anc_dict(tl),
+            "top_right": _anc_dict(tr),
+            "bot_left": _anc_dict(bl),
+            "bot_right": _anc_dict(br),
+        }
+        if verbose:
+            tool_line(
+                "anchors",
+                f"  page {entry.get('page', i + 1):>3}  TL={tl}  TR={tr}  BL={bl}  BR={br}",
+            )
+
+    sidecar_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    if not verbose:
+        ok_line(f"Anchors saved · {format_duration(time.perf_counter() - t1)}")
+    else:
+        tool_line("anchors", "Saved IGCSE anchor positions to sidecar.")
+
+
 def deskew_pdf_raster(
     input_pdf: Path,
     output_pdf: Path,
@@ -534,8 +631,11 @@ def deskew_pdf_raster(
     verbose: bool = True,
     saved_as: str | None = None,
 ) -> Path:
-    """Rasterize *input_pdf*, deskew each page (per half), detect IGCSE anchors,
-    write *output_pdf* and a sidecar JSON file (``*_anchors.json`` by default).
+    """Rasterize *input_pdf*, deskew each page (per half), write *output_pdf* and
+    a sidecar JSON (``*_anchors.json``) with reflines and **null** IGCSE anchors.
+
+    Call :func:`detect_page_anchors_for_cleaned_scan` after the cleaned PDF exists
+    to fill anchor positions (pipeline step 8).
 
     **Input and output paths must differ** — raw or intermediate PDFs must never
     be overwritten in-place (the pipeline reads the whole file while building
@@ -547,8 +647,8 @@ def deskew_pdf_raster(
             (blanks removed; rotation from PDF ``/Rotate`` and optionally Tesseract OSD).
         output_pdf: Destination PDF (must not resolve to the same path as *input_pdf*).
         dpi: Render/output DPI.
-        reflines_sidecar: Optional path for the anchor sidecar JSON (IGCSE anchors
-            per page).  Defaults to :func:`anchors_sidecar_path` applied to
+        reflines_sidecar: Optional path for the sidecar JSON (reflines + placeholder
+            anchors).  Defaults to :func:`anchors_sidecar_path` applied to
             *output_pdf*.  Use this when *output_pdf* is a temp file but the sidecar
             should use the final stem (e.g. ``cleaned_scan_anchors.json``).
         verbose: When False (e.g. ``xscore.py`` pipeline), print only summaries instead
@@ -653,56 +753,21 @@ def deskew_pdf_raster(
                     results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
                     prog.advance(task_id)
 
-    # Bootstrap IGCSE template from page 0 top half (Tesseract, runs once)
-    if verbose:
-        tool_line("deskew", "Extracting IGCSE template from page 1 …")
-    elif not verbose:
-        c.print()
-        info_line("Finding headers and vertical lines …")
-        t_hdr = time.perf_counter()
-
-    page0_gray = np.array(results[0][0].convert("L"))
-    p0_mid = page0_gray.shape[0] // 2
-    igcse_template = extract_igcse_template(page0_gray[:p0_mid, :], verbose=verbose)
-
-    # Detect IGCSE anchors on all pages (fast template matching, serial)
-    if verbose:
-        tool_line("deskew", "Detecting IGCSE anchors …")
-    page_anchors: dict[int, dict[str, AnchorPoint | None]] = {}
-    for i in range(n):
-        page_gray = np.array(results[i][0].convert("L"))
-        p_mid = page_gray.shape[0] // 2
-        tl, tr = detect_igcse_anchors(page_gray[:p_mid, :], igcse_template)
-        bl, br = detect_igcse_anchors(page_gray[p_mid:, :], igcse_template)
-        page_anchors[i] = {"top_left": tl, "top_right": tr, "bot_left": bl, "bot_right": br}
-        if verbose:
-            tool_line(
-                "deskew",
-                f"  page {i + 1:>3} anchors:"
-                f"  TL={tl}  TR={tr}  BL={bl}  BR={br}",
-            )
-
-    if not verbose:
-        ok_line(f"Found · {format_duration(time.perf_counter() - t_hdr)}")
-
-    # Build sidecar JSON (ordered by page index)
-    def _anc_dict(a: AnchorPoint | None) -> dict | None:
-        return asdict(a) if a is not None else None
-
+    # Build sidecar JSON (ordered by page index). IGCSE anchors filled in step 8.
+    null_anchors = {
+        "top_left": None,
+        "top_right": None,
+        "bot_left": None,
+        "bot_right": None,
+    }
     reflines_data: list[dict] = []
     for i in range(n):
         _, _, _, top_lines, bot_lines = results[i]
-        anc = page_anchors[i]
         reflines_data.append({
             "page": i + 1,
             "top": [asdict(ln) for ln in top_lines],
             "bot": [asdict(ln) for ln in bot_lines],
-            "anchors": {
-                "top_left":  _anc_dict(anc["top_left"]),
-                "top_right": _anc_dict(anc["top_right"]),
-                "bot_left":  _anc_dict(anc["bot_left"]),
-                "bot_right": _anc_dict(anc["bot_right"]),
-            },
+            "anchors": dict(null_anchors),
         })
 
     sidecar_path = (
@@ -713,7 +778,10 @@ def deskew_pdf_raster(
     sidecar_path.write_text(json.dumps(reflines_data, indent=2))
 
     if verbose:
-        tool_line("deskew", "Saved alignment data (anchors and layout lines).")
+        tool_line(
+            "deskew",
+            "Saved alignment data (layout lines; IGCSE anchors in a later pipeline step).",
+        )
 
     if not verbose:
         c.print()

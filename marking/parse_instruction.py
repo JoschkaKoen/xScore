@@ -38,9 +38,10 @@ Prefer folder_path when both apply.
 skip_clean_scan: true=reuse cleaned scan ("skip cleaning", "don't reprocess").
 force_clean_scan: true=ignore cache, re-clean ("re-clean", "force deskew"). Never both true.
 rescaffold: true=rebuild scaffold ("rebuild scaffold", "reparse", "refresh questions").
-through_step: 1-14 or null. 1=parse, 2=folder, 3=roster, 4=scaffold, 5=blank pages, 6=autorotate,
-  7=deskew, 8=exam-to-scan transform, 9=assign pages, 10=exercises, 11=grade, 12=print results,
-  13=ground truth, 14=report.
+through_step: 1-16 or null. 1=parse, 2=folder, 3=roster, 4=scaffold, 5=blank pages, 6=autorotate,
+  7=deskew, 8=detect page anchors, 9=calculate transformation, 10=project bounding boxes,
+  11=detect student names, 12=detect questions attempted, 13=mark answers, 14=compile results,
+  15=check accuracy, 16=compile report.
 no_report: true=skip PDF ("terminal only", "no report").
 """
 
@@ -148,7 +149,7 @@ def parse_prompt(
     if ts is not None and ts != "":
         try:
             n = int(ts)
-            if 1 <= n <= 14:
+            if 1 <= n <= 16:
                 through_step = n
         except (TypeError, ValueError):
             pass
