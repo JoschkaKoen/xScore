@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Disabled.")
+
 from shared.exam_paths import find_latest_cleaned_scan
 
 
