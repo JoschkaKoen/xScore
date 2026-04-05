@@ -20,7 +20,18 @@ def exam_artifact_dir(exam_folder: Path, output_base: str | Path = "output") -> 
     return Path(output_base) / stem
 
 
-def artifact_scaffold_cache_path(artifact_dir: Path) -> Path:
+def artifact_scaffold_json_path(artifact_dir: Path) -> Path:
+    """Canonical scaffold cache JSON in the run folder."""
+    return artifact_dir / "scaffold.json"
+
+
+def artifact_scaffold_markdown_path(artifact_dir: Path) -> Path:
+    """Human-readable scaffold view beside :func:`artifact_scaffold_json_path`."""
+    return artifact_dir / "scaffold.md"
+
+
+def legacy_flat_artifact_scaffold_cache_path(artifact_dir: Path) -> Path:
+    """Deprecated: older runs stored the cache as ``scaffold_cache.json`` in the run folder."""
     return artifact_dir / "scaffold_cache.json"
 
 
@@ -89,7 +100,8 @@ def find_scaffold_cache_file(
     """First existing scaffold cache: artifact dir, then legacy locations under *exam_folder*."""
     ad = exam_artifact_dir(exam_folder, output_base)
     for p in (
-        artifact_scaffold_cache_path(ad),
+        artifact_scaffold_json_path(ad),
+        legacy_flat_artifact_scaffold_cache_path(ad),
         legacy_artifact_scaffold_cache_path(ad),
         exam_folder / "scaffolds" / "scaffold_cache.json",
         exam_folder / "scaffold_cache.json",

@@ -140,11 +140,11 @@ The scaffold is the structured model of the exam: question numbers, stems, answe
    - **Table rows** `11(a)`, `11(b)`, `11(c)(i)`, `11(c)(ii)` → matched to scaffold ids `11a`, `11b`, `11ci`, `11cii`; model answer text goes to `correct_answer`
    - **Printed MC lines** `Question 38 (Answer: A)` → letters assigned to matching MC leaves in document order
 3. **Bounding boxes** — Each leaf's `bbox.y0` is pulled down to just below the last text line of the preceding exercise in the same layout cell, so regions don't overlap.
-4. **Cache** — `scaffold_cache.json` in the run directory (sparse JSON: fields are omitted when null or empty). Reloaded when no source PDF is newer than the cache; rebuilt and re-cached automatically otherwise. Legacy caches still under the exam folder (or older `scaffolds/scaffold_cache.json` in a run folder) are still found until rewritten.
+4. **Cache** — `scaffold.json` in the run directory (sparse JSON: fields are omitted when null or empty), plus `scaffold.md` with the same content in a readable layout. Reloaded when no source PDF is newer than the cache; rebuilt and re-cached automatically otherwise. Older `scaffold_cache.json` files (flat in the run folder, under `scaffolds/`, or next to the exam inputs) are still loaded until replaced on the next save.
 
 **`build_scaffold(folder, client=None, artifact_dir=...)`** — `client` is unused (backward compatibility). `xscore.py` passes a per-run `artifact_dir`; the default helper is `exam_artifact_dir()` for other callers.
 
-**`Question` fields written to `scaffold_cache.json`:**
+**`Question` fields written to `scaffold.json`:**
 
 | Field | Role |
 |-------|------|

@@ -255,7 +255,12 @@ def _load_grade_imports() -> SimpleNamespace:
         print_results_table,
     )
     from scaffold.generate_scaffold import build_scaffold
-    from shared.exam_paths import artifact_scaffold_cache_path, legacy_artifact_scaffold_cache_path
+    from shared.exam_paths import (
+        artifact_scaffold_json_path,
+        artifact_scaffold_markdown_path,
+        legacy_artifact_scaffold_cache_path,
+        legacy_flat_artifact_scaffold_cache_path,
+    )
     from shared.load_ground_truth import evaluate_results, find_ground_truth_file, load_ground_truth
     from shared.load_student_list import read_student_list
     from shared.terminal_ui import (
@@ -296,7 +301,9 @@ def _load_grade_imports() -> SimpleNamespace:
         print_page_summary=print_page_summary,
         print_results_table=print_results_table,
         build_scaffold=build_scaffold,
-        artifact_scaffold_cache_path=artifact_scaffold_cache_path,
+        artifact_scaffold_json_path=artifact_scaffold_json_path,
+        artifact_scaffold_markdown_path=artifact_scaffold_markdown_path,
+        legacy_flat_artifact_scaffold_cache_path=legacy_flat_artifact_scaffold_cache_path,
         legacy_artifact_scaffold_cache_path=legacy_artifact_scaffold_cache_path,
         evaluate_results=evaluate_results,
         find_ground_truth_file=find_ground_truth_file,
@@ -407,7 +414,9 @@ def _grade_step04_scaffold(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
     gi.pipeline_step(4, "Read raw exam & create scaffold")
     if ctx.rescaffold:
         for cache_p in (
-            gi.artifact_scaffold_cache_path(ctx.artifact_dir),
+            gi.artifact_scaffold_json_path(ctx.artifact_dir),
+            gi.artifact_scaffold_markdown_path(ctx.artifact_dir),
+            gi.legacy_flat_artifact_scaffold_cache_path(ctx.artifact_dir),
             gi.legacy_artifact_scaffold_cache_path(ctx.artifact_dir),
             ctx.folder / "scaffolds" / "scaffold_cache.json",
             ctx.folder / "scaffold_cache.json",

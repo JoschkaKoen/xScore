@@ -2,8 +2,9 @@
 
 No AI for structure: question regions follow left-margin numbering (Cambridge-style).
 The list of questions is in **reading order** on the page(s); printed numbers may be out of order.
-Results are cached under ``{artifact_dir}/scaffold_cache.json`` (default
-``output/<exam_stem>/`` via :func:`shared.exam_paths.exam_artifact_dir`) and reused
+Results are cached under ``{artifact_dir}/scaffold.json`` (and a readable
+``scaffold.md`` beside it; default ``output/<exam_stem>/`` via
+:func:`shared.exam_paths.exam_artifact_dir`) and reused
 if no source PDF is newer than the cache. Exam PDF figures go under
 ``{artifact_dir}/scaffold_images``.
 """
@@ -27,10 +28,13 @@ from shared.models import (
 )
 from shared.exam_paths import (
     artifact_scaffold_boxes_path,
-    artifact_scaffold_cache_path,
+    artifact_scaffold_json_path,
+    artifact_scaffold_markdown_path,
     exam_artifact_dir,
     legacy_artifact_scaffold_cache_path,
+    legacy_flat_artifact_scaffold_cache_path,
 )
+from scaffold.scaffold_markdown import write_scaffold_markdown
 from scaffold.pdf_parser import (
     merge_answers_into_scaffold,
     parse_answer_key_pdf,
@@ -202,7 +206,8 @@ def _legacy_scaffold_subdir_cache(folder: Path) -> Path:
 
 def _effective_cache_path(folder: Path, artifact_dir: Path) -> Path | None:
     for p in (
-        artifact_scaffold_cache_path(artifact_dir),
+        artifact_scaffold_json_path(artifact_dir),
+        legacy_flat_artifact_scaffold_cache_path(artifact_dir),
         legacy_artifact_scaffold_cache_path(artifact_dir),
         _legacy_scaffold_subdir_cache(folder),
         _legacy_cache_path(folder),
@@ -308,18 +313,29 @@ def _load_cache(folder: Path, artifact_dir: Path) -> ExamScaffold:
     )
 
 
-def _save_cache(artifact_dir: Path, scaffold: ExamScaffold) -> None:
-    payload = {
+def _scaffold_to_payload(scaffold: ExamScaffold) -> dict[str, Any]:
+    return {
         "schema_version": SCHEMA_VERSION,
         "questions": [question_to_dict(q) for q in scaffold.questions],
         "total_marks": scaffold.total_marks,
         "page_count": scaffold.page_count,
         "raw_description": scaffold.raw_description,
     }
-    out = artifact_scaffold_cache_path(artifact_dir)
+
+
+def _save_cache(artifact_dir: Path, scaffold: ExamScaffold) -> None:
+    payload = _scaffold_to_payload(scaffold)
+    out = artifact_scaffold_json_path(artifact_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
+    write_scaffold_markdown(artifact_dir, payload)
+    flat_old = legacy_flat_artifact_scaffold_cache_path(artifact_dir)
+    if flat_old.is_file() and flat_old != out:
+        try:
+            flat_old.unlink()
+        except OSError:
+            pass
     leg = legacy_artifact_scaffold_cache_path(artifact_dir)
     if leg.is_file():
         try:
@@ -370,6 +386,8 @@ def build_scaffold(
                         "Migrating scaffold cache and images from exam folder → output …",
                     )
                 _migrate_scaffold_cache_to_artifact(folder, ad, scaffold)
+            elif not artifact_scaffold_markdown_path(ad).is_file():
+                write_scaffold_markdown(ad, _scaffold_to_payload(scaffold))
             return scaffold
         except (ValueError, KeyError, TypeError, json.JSONDecodeError):
             tool_line("scaffold", "Cache incompatible or corrupt — rebuilding …")
