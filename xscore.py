@@ -253,7 +253,6 @@ def _load_grade_imports() -> SimpleNamespace:
         print_grand_summary,
         print_page_summary,
         print_results_table,
-        print_scaffold_summary,
     )
     from scaffold.generate_scaffold import build_scaffold
     from shared.exam_paths import artifact_scaffold_cache_path, legacy_artifact_scaffold_cache_path
@@ -296,7 +295,6 @@ def _load_grade_imports() -> SimpleNamespace:
         print_grand_summary=print_grand_summary,
         print_page_summary=print_page_summary,
         print_results_table=print_results_table,
-        print_scaffold_summary=print_scaffold_summary,
         build_scaffold=build_scaffold,
         artifact_scaffold_cache_path=artifact_scaffold_cache_path,
         legacy_artifact_scaffold_cache_path=legacy_artifact_scaffold_cache_path,
@@ -419,9 +417,6 @@ def _grade_step04_scaffold(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
                 gi.warn_line("Removed cached scaffold (rebuild).")
 
     ctx.scaffold = gi.build_scaffold(ctx.folder, client=ctx.client, artifact_dir=ctx.artifact_dir)
-    from shared.terminal_ui import pipeline_verbose
-    if pipeline_verbose():
-        gi.print_scaffold_summary(ctx.scaffold)
     if ctx.through_step == 4:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
@@ -485,31 +480,31 @@ def _grade_scan_phases(ctx: _GradeCtx, gi: SimpleNamespace) -> None:
         raise SystemExit(0)
 
     gi.pipeline_step(6, "Autorotate")
-    gi.autorotate_phase(ad, verbose=False)
+    gi.autorotate_phase(ad)
     if ctx.through_step == 6:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
     gi.pipeline_step(7, "Small angle correction")
-    ctx.cleaned_pdf = gi.deskew_phase(ctx.folder, ad, dpi, verbose=False)
+    ctx.cleaned_pdf = gi.deskew_phase(ctx.folder, ad, dpi)
     if ctx.through_step == 7:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
     gi.pipeline_step(8, "Detect page anchors")
-    gi.detect_page_anchors_phase(ctx.folder, ad, dpi, verbose=False)
+    gi.detect_page_anchors_phase(ctx.folder, ad, dpi)
     if ctx.through_step == 8:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
     gi.pipeline_step(9, "Calculate transformation")
-    gi.compute_transformation_phase(ctx.folder, ad, dpi, verbose=False)
+    gi.compute_transformation_phase(ctx.folder, ad, dpi)
     if ctx.through_step == 9:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
 
     gi.pipeline_step(10, "Project bounding boxes")
-    gi.project_bounding_boxes_phase(ctx.folder, ad, dpi, verbose=False)
+    gi.project_bounding_boxes_phase(ctx.folder, ad, dpi)
     if ctx.through_step == 10:
         ctx.partial_stop_readme_step = ctx.through_step
         raise SystemExit(0)
@@ -541,7 +536,6 @@ def _grade_step11_detect_student_names(ctx: _GradeCtx, gi: SimpleNamespace) -> N
         dpi=gi.NAME_RECOGNITION_DPI,
         client=ctx.client,
         name_crop_fraction=gi.NAME_CROP_FRACTION,
-        verbose=False,
         pages=ctx.name_pages,
     )
     gi.print_page_summary(ctx.page_map, ctx.students)

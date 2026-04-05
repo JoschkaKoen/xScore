@@ -37,15 +37,6 @@ def _kimi_k2_5_model() -> bool:
     return AI_MODEL.startswith("kimi-k2")
 
 
-def _pipeline_verbose() -> bool:
-    try:
-        from shared.terminal_ui import pipeline_verbose
-
-        return pipeline_verbose()
-    except Exception:
-        return False
-
-
 def _filter_schema_fields(data: dict, schema: type[BaseModel]) -> dict:
     """Remove extra fields not defined in the schema.
     
@@ -122,16 +113,6 @@ class KimiProvider:
             except Exception:
                 print(msg)
 
-        def _note(msg: str) -> None:
-            if not _pipeline_verbose():
-                return
-            try:
-                from shared.terminal_ui import note_line
-
-                note_line(msg)
-            except Exception:
-                pass
-
         if not KIMI_AVAILABLE:
             _warn("OpenAI package not installed. Run: pip install openai")
             return None
@@ -141,8 +122,7 @@ class KimiProvider:
             return None
 
         base_url = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
-        _note("Kimi API client configured.")
-        
+
         assert _OpenAIClient is not None
         return _OpenAIClient(api_key=api_key, base_url=base_url)
 
@@ -223,15 +203,6 @@ class KimiProvider:
                     # Try to extract partial JSON
                     partial_data = _extract_json_from_text(raw)
                     if partial_data is not None:
-                        if _pipeline_verbose():
-                            try:
-                                from shared.terminal_ui import info_line
-
-                                info_line(
-                                    f"Recovered partial JSON for page {page_num}"
-                                )
-                            except Exception:
-                                pass
                         # Also filter extra fields from partial data
                         partial_data = _filter_schema_fields(partial_data, schema)
                         try:
@@ -240,14 +211,6 @@ class KimiProvider:
                             pass
                         return normalize_extracted_record(partial_data, answer_fields)
 
-                    if _pipeline_verbose():
-                        try:
-                            from shared.terminal_ui import info_line
-
-                            info_line(f"Kimi parse error: {parse_err}")
-                            info_line(f"Raw (500 chars): {raw[:500]}…")
-                        except Exception:
-                            pass
                     raise RuntimeError(f"Unparseable Kimi response for page {page_num}") from parse_err
 
             except Exception as e:

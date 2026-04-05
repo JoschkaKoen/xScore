@@ -209,7 +209,7 @@ shared/              models, exam_paths, terminal_ui, load_student_list, load_gr
 
 ### Terminal output
 
-[`shared/terminal_ui.py`](shared/terminal_ui.py) formats `xscore.py` progress. By default, step headers are **compact** (single line). Set **`PIPELINE_VERBOSE=1`** or **`GRADE_VERBOSE=1`** for wide step banners (`═` rules) and extra detail from some modules (e.g. Kimi connection line, extraction debug). Set **`PIPELINE_DEBUG_AI=1`** to log truncated model responses (first 500 characters) to stderr via the `autograder.ai` logger for marking and extraction Kimi calls.
+[`shared/terminal_ui.py`](shared/terminal_ui.py) formats `xscore.py` progress with compact step headers (single line). Set **`PIPELINE_DEBUG_AI=1`** to log truncated model responses (first 500 characters) to stderr via the `autograder.ai` logger for marking and extraction Kimi calls.
 
 ### Import reference (steps 1–16)
 

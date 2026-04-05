@@ -1,7 +1,6 @@
 """CLI output via Rich (tables/panels use :func:`get_console`).
 
 Respects ``NO_COLOR`` and ``FORCE_COLOR``. Set ``ASCII_LOG=1`` to disable emoji.
-Set ``PIPELINE_VERBOSE=1`` or ``GRADE_VERBOSE=1`` for wide step banners.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ import sys
 
 from rich.console import Console
 from rich.progress import ProgressColumn, Task
-from rich.rule import Rule
 from rich.text import Text
 
 # Legacy ANSI constants (some callers still pass these to :func:`paint`)
@@ -167,12 +165,6 @@ def get_stderr_console() -> Console:
     )
 
 
-def pipeline_verbose() -> bool:
-    """True when ``PIPELINE_VERBOSE`` or ``GRADE_VERBOSE`` requests heavy banners / debug."""
-    v = (os.environ.get("PIPELINE_VERBOSE") or os.environ.get("GRADE_VERBOSE") or "").strip()
-    return v.lower() in ("1", "true", "yes", "on")
-
-
 def pipeline_debug_ai() -> bool:
     """True when ``PIPELINE_DEBUG_AI`` requests stderr logging of truncated model responses."""
     v = (os.environ.get("PIPELINE_DEBUG_AI") or "").strip()
@@ -204,20 +196,13 @@ def pipeline_step(
     *,
     subtitle: str | None = None,
 ) -> None:
-    """Print a pipeline step header (compact by default; wide rules if :func:`pipeline_verbose`)."""
+    """Print a compact pipeline step header."""
     c = get_console()
     label = f"  {icon('step')}  Step {readme_step} — {title}"
     c.print()
-    if pipeline_verbose():
-        c.print(Rule(style="dim", characters="═"))
-        c.print(f"[bold cyan]{label}[/]")
-        if subtitle:
-            c.print(f"[dim]  {icon('info')}  {subtitle}[/]")
-        c.print(Rule(style="dim", characters="═"))
-    else:
-        c.print(f"[bold cyan]{label}[/]")
-        if subtitle:
-            c.print(f"[dim]  {icon('info')}  {subtitle}[/]")
+    c.print(f"[bold cyan]{label}[/]")
+    if subtitle:
+        c.print(f"[dim]  {icon('info')}  {subtitle}[/]")
     sys.stdout.flush()
 
 
@@ -251,10 +236,8 @@ def note_line(message: str) -> None:
 
 
 def tool_line(tool: str, message: str) -> None:
-    """Like :func:`info_line`; when :func:`pipeline_verbose` is on, prefix with ``[tool]``."""
+    """Like :func:`info_line` (tool name is accepted for call-site clarity only)."""
+    _ = tool
     c = get_console()
-    if pipeline_verbose():
-        c.print(f"[dim]  {icon('info')}  [{tool}] {message}[/]")
-    else:
-        c.print(f"[dim]  {icon('info')}  {message}[/]")
+    c.print(f"[dim]  {icon('info')}  {message}[/]")
     sys.stdout.flush()

@@ -46,13 +46,12 @@ def assign_pages(
     client: KimiChatClient | None = None,
     name_crop_fraction: float = 0.15,
     *,
-    verbose: bool = True,
     pages: list | None = None,
 ) -> list[PageAssignment]:
     """Return a ``PageAssignment`` for every student whose pages were found.
 
     If *client* is None it is created via ``KimiProvider.create_client()``.
-    *verbose*: when False (``xscore.py``), log only sparse progress instead of every page.
+    Logs sparse progress (not every page).
     *pages*: optional pre-rendered page images at *dpi* (skips ``convert_from_path``).
     """
     from extraction.ground_truth import fuzzy_match_name
@@ -70,7 +69,7 @@ def assign_pages(
         tool_line("pages", f"Rendering pages @ {dpi} DPI …")
         pages = convert_from_path(str(cleaned_pdf), dpi=dpi, thread_count=os.cpu_count() or 4)
     n_pages = len(pages)
-    step = max(1, n_pages // 8) if not verbose and n_pages > 1 else 1
+    step = max(1, n_pages // 8) if n_pages > 1 else 1
 
     # For each page: ask Kimi for the student name (or empty string)
     raw_names: list[str] = []
@@ -80,12 +79,12 @@ def assign_pages(
         raw = kimi_image_call(client, img_b64, _NAME_PROMPT, max_tokens=64)
         data = parse_json_safe(raw)
         name = str(data.get("name", "") or "").strip()
-        if verbose or i == 1 or i == n_pages or (i % step == 0):
+        if i == 1 or i == n_pages or (i % step == 0):
             info_line(f"Page {i:3d}/{n_pages}: raw name = {name!r}")
         raw_names.append(name)
         time.sleep(PAGE_API_DELAY_S)
-    if not verbose and n_pages > 1:
-        info_line(f"Name OCR: {n_pages} pages (sample every {step}; verbose=all lines)")
+    if n_pages > 1:
+        info_line(f"Name OCR: {n_pages} pages (sample every {step})")
 
     # Fuzzy-match each raw name; empty → "UNKNOWN"
     matched: list[str | None] = []

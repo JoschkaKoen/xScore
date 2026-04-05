@@ -319,8 +319,6 @@ def extract_igcse_template(
     top_half_gray: np.ndarray,
     search_height: int = _ANCHOR_SEARCH_HEIGHT,
     padding: int = _ANCHOR_TEMPLATE_PADDING,
-    *,
-    verbose: bool = True,
 ) -> np.ndarray:
     """Bootstrap the IGCSE label template from the left sub-page of *top_half_gray*.
 
@@ -375,14 +373,6 @@ def extract_igcse_template(
     y1 = min(strip.shape[0], best_bbox[3] + padding)
 
     template = strip[y0:y1, x0:x1].copy()
-    if verbose:
-        from shared.terminal_ui import tool_line
-
-        tool_line(
-            "deskew",
-            f"IGCSE template: {template.shape[1]}x{template.shape[0]}px "
-            f"at bbox=({x0},{y0},{x1},{y1})  OCR conf={best_conf}",
-        )
     return template
 
 
@@ -537,8 +527,6 @@ def detect_page_anchors_for_cleaned_scan(
     cleaned_pdf: Path,
     sidecar_path: Path,
     dpi: int,
-    *,
-    verbose: bool = False,
 ) -> None:
     """Template-match IGCSE headers on *cleaned_pdf* and write into *sidecar_path*.
 
@@ -552,13 +540,7 @@ def detect_page_anchors_for_cleaned_scan(
     if not sidecar_path.is_file():
         raise FileNotFoundError(f"Missing anchor sidecar: {sidecar_path}")
 
-    from shared.terminal_ui import (
-        format_duration,
-        get_console,
-        info_line,
-        ok_line,
-        tool_line,
-    )
+    from shared.terminal_ui import format_duration, get_console, info_line, ok_line
 
     c = get_console()
     data: list[dict] = json.loads(sidecar_path.read_text(encoding="utf-8"))
@@ -571,15 +553,10 @@ def detect_page_anchors_for_cleaned_scan(
         grayscale=True,
         thread_count=os.cpu_count() or 4,
     )
-    if verbose:
-        c.print()
-        tool_line("anchors", f"Rendering {cleaned_pdf.name} at {dpi} DPI …")
-        pages = convert_from_path(str(cleaned_pdf), **_pdf_kw)
-    else:
-        t0 = time.perf_counter()
-        pages = convert_from_path(str(cleaned_pdf), **_pdf_kw)
-        ok_line(f"Pages loaded · {format_duration(time.perf_counter() - t0)}")
-        c.print()
+    t0 = time.perf_counter()
+    pages = convert_from_path(str(cleaned_pdf), **_pdf_kw)
+    ok_line(f"Pages loaded · {format_duration(time.perf_counter() - t0)}")
+    c.print()
 
     n = len(pages)
     if n < n_side:
@@ -587,17 +564,12 @@ def detect_page_anchors_for_cleaned_scan(
             f"Sidecar lists {n_side} pages but PDF rendered {n} — cannot match anchors."
         )
 
-    if verbose:
-        tool_line("anchors", "Extracting IGCSE template from page 1 …")
     page0_gray = np.array(pages[0].convert("L"))
     p0_mid = page0_gray.shape[0] // 2
-    igcse_template = extract_igcse_template(page0_gray[:p0_mid, :], verbose=verbose)
+    igcse_template = extract_igcse_template(page0_gray[:p0_mid, :])
 
-    if verbose:
-        tool_line("anchors", "Matching IGCSE headers on each page …")
-    elif not verbose:
-        info_line("Matching IGCSE headers …")
-        t1 = time.perf_counter()
+    info_line("Matching IGCSE headers …")
+    t1 = time.perf_counter()
 
     def _anc_dict(a: AnchorPoint | None) -> dict | None:
         return asdict(a) if a is not None else None
@@ -614,18 +586,9 @@ def detect_page_anchors_for_cleaned_scan(
             "bot_left": _anc_dict(bl),
             "bot_right": _anc_dict(br),
         }
-        if verbose:
-            tool_line(
-                "anchors",
-                f"  page {entry.get('page', i + 1):>3}  TL={tl}  TR={tr}  BL={bl}  BR={br}",
-            )
-
     sidecar_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
-    if not verbose:
-        ok_line(f"Anchors saved · {format_duration(time.perf_counter() - t1)}")
-    else:
-        tool_line("anchors", "Saved IGCSE anchor positions to sidecar.")
+    ok_line(f"Anchors saved · {format_duration(time.perf_counter() - t1)}")
 
 
 def deskew_pdf_raster(
@@ -634,7 +597,6 @@ def deskew_pdf_raster(
     dpi: int = 300,
     *,
     reflines_sidecar: Path | None = None,
-    verbose: bool = True,
     saved_as: str | None = None,
 ) -> Path:
     """Rasterize *input_pdf*, deskew each page (per half), write *output_pdf* and
@@ -657,8 +619,6 @@ def deskew_pdf_raster(
             anchors).  Defaults to :func:`anchors_sidecar_path` applied to
             *output_pdf*.  Use this when *output_pdf* is a temp file but the sidecar
             should use the final stem (e.g. ``cleaned_scan_anchors.json``).
-        verbose: When False (e.g. ``xscore.py`` pipeline), print only summaries instead
-            of per-page angle, line, and anchor lines.
         saved_as: If set, compact-mode success line shows this filename (e.g. final
             ``cleaned_scan.pdf``) when *output_pdf* is a temp path.
 
@@ -689,9 +649,7 @@ def deskew_pdf_raster(
         PROGRESS_TASK_TEXT,
         format_duration,
         get_console,
-        info_line,
         ok_line,
-        tool_line,
     )
 
     c = get_console()
@@ -701,23 +659,12 @@ def deskew_pdf_raster(
         thread_count=os.cpu_count() or 4,
     )
 
-    if verbose:
-        c.print()
-        tool_line("deskew", f"Rendering at {dpi} DPI …")
-        tool_line(
-            "deskew",
-            "Angle detection: coarse 0.1° on ¼-scale proxy, fine 0.01° at full resolution",
-        )
-        pages = convert_from_path(str(input_pdf), **_pdf_kw)
-    else:
-        t_load = time.perf_counter()
-        pages = convert_from_path(str(input_pdf), **_pdf_kw)
-        ok_line(f"Pages loaded · {format_duration(time.perf_counter() - t_load)}")
-        c.print()
+    t_load = time.perf_counter()
+    pages = convert_from_path(str(input_pdf), **_pdf_kw)
+    ok_line(f"Pages loaded · {format_duration(time.perf_counter() - t_load)}")
+    c.print()
     n = len(pages)
     num_workers = min(os.cpu_count() or 4, n)
-    if verbose:
-        tool_line("deskew", f"{n} pages loaded")
 
     results: dict[int, _PageResult] = {}
 
@@ -726,36 +673,19 @@ def deskew_pdf_raster(
             ex.submit(_process_page, (i, pages[i])): i
             for i in range(n)
         }
-        if verbose:
-            tool_line(
-                "deskew",
-                "Starting per-page pipeline: (1) angular deskew each half  "
-                "(2) rotate  (3) vertical ruling lines on deskewed halves …",
-            )
+        with Progress(
+            TextColumn(PROGRESS_TASK_TEXT),
+            BarColumn(bar_width=28),
+            TaskProgressColumn(),
+            CompactElapsedColumn(),
+            console=c,
+            transient=False,
+        ) as prog:
+            task_id = prog.add_task("Correcting angle …", total=n)
             for fut in as_completed(futures):
                 page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
                 results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
-                tool_line(
-                    "deskew",
-                    f"  page {page_idx + 1:>3}/{n}  deskew angles  "
-                    f"top={top_angle:+.2f}°  bot={bot_angle:+.2f}°",
-                )
-                tool_line("deskew", f"    ref-lines (after deskew)  top: {_lines_str(top_lines)}")
-                tool_line("deskew", f"    ref-lines (after deskew)  bot: {_lines_str(bot_lines)}")
-        else:
-            with Progress(
-                TextColumn(PROGRESS_TASK_TEXT),
-                BarColumn(bar_width=28),
-                TaskProgressColumn(),
-                CompactElapsedColumn(),
-                console=c,
-                transient=False,
-            ) as prog:
-                task_id = prog.add_task("Correcting angle …", total=n)
-                for fut in as_completed(futures):
-                    page_idx, fixed_pil, top_angle, bot_angle, top_lines, bot_lines = fut.result()
-                    results[page_idx] = (fixed_pil, top_angle, bot_angle, top_lines, bot_lines)
-                    prog.advance(task_id)
+                prog.advance(task_id)
 
     # Build sidecar JSON (ordered by page index). IGCSE anchors filled in step 8.
     null_anchors = {
@@ -781,15 +711,8 @@ def deskew_pdf_raster(
     )
     sidecar_path.write_text(json.dumps(reflines_data, indent=2))
 
-    if verbose:
-        tool_line(
-            "deskew",
-            "Saved alignment data (layout lines; IGCSE anchors in a later pipeline step).",
-        )
-
-    if not verbose:
-        c.print()
-        t_write = time.perf_counter()
+    c.print()
+    t_write = time.perf_counter()
 
     from config import CLEANED_SCAN_EMBED_FORMAT, CLEANED_SCAN_JPEG_QUALITY
 
@@ -816,24 +739,7 @@ def deskew_pdf_raster(
     doc.save(str(output_pdf), deflate=False)
     doc.close()
 
-    if not verbose:
-        ok_line(f"Saved scan · {format_duration(time.perf_counter() - t_write)}")
-    else:
-        from config import DESKEW_DETECT_REFERENCE_LINES
-
-        if DESKEW_DETECT_REFERENCE_LINES:
-            ref_ok = sum(
-                1
-                for i in range(n)
-                if len(results[i][3]) == 3 and len(results[i][4]) == 3
-            )
-            ok_line(
-                f"Pages aligned · vertical ref-lines 3+3 on {ref_ok}/{n} pages"
-            )
-        else:
-            ok_line(
-                f"Pages aligned · vertical ref-line detection off ({n} pages)"
-            )
+    ok_line(f"Saved scan · {format_duration(time.perf_counter() - t_write)}")
     return output_pdf
 
 

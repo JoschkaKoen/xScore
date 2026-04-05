@@ -44,7 +44,6 @@ def write_projected_scaffold_debug_pdf(
     dpi: int,
     *,
     force_layout_mismatch: bool = False,
-    verbose: bool = True,
     artifact_dir: Path | None = None,
 ) -> Path | None:
     """Project scaffold bboxes onto *deskewed_pdf* using 4-up anchors + reflines JSON.
@@ -71,13 +70,13 @@ def write_projected_scaffold_debug_pdf(
         msg = (
             "No *4up* raw exam PDF — skip projected overlay (needs four-up IGCSE anchors)."
         )
-        (warn_line if verbose else info_line)(msg)
+        info_line(msg)
         return None
 
     try:
         exam_for_scaffold = _find_exam_pdf(folder)
     except FileNotFoundError:
-        (warn_line if verbose else info_line)("No raw exam PDF — skip projected overlay")
+        info_line("No raw exam PDF — skip projected overlay")
         return None
 
     if not force_layout_mismatch and exam_for_scaffold.resolve() != raw4.resolve():
@@ -86,7 +85,7 @@ def write_projected_scaffold_debug_pdf(
             "the four-up scan used for anchors. Use the same file for both, or pass "
             "force_layout_mismatch."
         )
-        (warn_line if verbose else info_line)(msg)
+        info_line(msg)
         return None
 
     ad = artifact_dir if artifact_dir is not None else exam_artifact_dir(folder)
@@ -94,7 +93,7 @@ def write_projected_scaffold_debug_pdf(
         scaffold = build_scaffold(
             folder,
             artifact_dir=ad,
-            quiet=not verbose,
+            quiet=True,
         )
         roots = scaffold.questions
     except Exception as e:
@@ -103,7 +102,7 @@ def write_projected_scaffold_debug_pdf(
 
     sidecar = resolve_deskew_sidecar(deskewed_pdf)
     if sidecar is None:
-        (warn_line if verbose else info_line)(
+        info_line(
             "Missing anchor sidecar (*_anchors.json or legacy *_reflines.json) — skip projected overlay"
         )
         return None
@@ -116,14 +115,12 @@ def write_projected_scaffold_debug_pdf(
             sidecar,
             transforms_path,
             dpi=dpi,
-            verbose=verbose,
         ):
             overlay_projected_scaffold_from_transforms_json(
                 deskewed_pdf,
                 transforms_path,
                 roots,
                 out,
-                verbose=verbose,
             )
         else:
             overlay_projected_scaffold_on_scan_pdf(
@@ -133,7 +130,6 @@ def write_projected_scaffold_debug_pdf(
                 roots,
                 out,
                 dpi=dpi,
-                verbose=verbose,
             )
         return out if out.is_file() else None
     except Exception as e:
@@ -149,7 +145,6 @@ def write_scan_debug_pdfs_after_deskew(
     force_projected_mismatch: bool = False,
     write_reflines: bool = False,
     write_projected: bool = True,
-    verbose: bool = False,
     artifact_dir: Path | None = None,
 ) -> None:
     """After a successful deskew, write optional debug PDFs next to *deskewed_pdf*."""
@@ -161,6 +156,5 @@ def write_scan_debug_pdfs_after_deskew(
             deskewed_pdf,
             dpi,
             force_layout_mismatch=force_projected_mismatch,
-            verbose=verbose,
             artifact_dir=artifact_dir,
         )

@@ -463,7 +463,6 @@ def overlay_projected_scaffold_on_scan_pdf(
     line_width: float = 0.9,
     scaffold_page: int = 1,
     mid_y_pt: float = _RAW_MID_Y_PT,
-    verbose: bool = True,
 ) -> Path:
     """Draw projected scaffold regions on a **copy** of the deskewed scan PDF.
 
@@ -486,7 +485,6 @@ def overlay_projected_scaffold_on_scan_pdf(
         line_width: Stroke width in PDF points.
         scaffold_page: Only draw ``BBox`` objects whose ``page`` equals this (1-based).
         mid_y_pt: 4-up split line for top vs bottom transform (default 420.9).
-        verbose: Per-page progress lines; set False for a single summary line (pipeline).
 
     Returns:
         Path to the written *output_pdf*.
@@ -505,7 +503,7 @@ def overlay_projected_scaffold_on_scan_pdf(
 
     all_nodes = flatten_questions(questions)
 
-    from shared.terminal_ui import ok_line, tool_line, warn_line
+    from shared.terminal_ui import warn_line
 
     doc = fitz.open(str(deskewed_pdf))
     try:
@@ -517,7 +515,6 @@ def overlay_projected_scaffold_on_scan_pdf(
                 f"— overlaying min({n_side}, {n_doc}) pages"
             )
 
-        total_rects = 0
         n_overlay = min(n_doc, n_side)
         for page_idx in range(n_overlay):
             entry = sidecar[page_idx]
@@ -554,15 +551,6 @@ def overlay_projected_scaffold_on_scan_pdf(
             for r, color in exercise + eq_blank:
                 page.draw_rect(r, color=color, width=line_width)
 
-            n_drawn = len(exercise) + len(eq_blank)
-            total_rects += n_drawn
-            if verbose:
-                tool_line(
-                    "overlay",
-                    f"page {page_idx + 1}/{n_doc} · {n_drawn} rects "
-                    f"(exercise={len(exercise)} eq_blank={len(eq_blank)})",
-                )
-
         doc.save(str(save_path), garbage=4, deflate=True)
     finally:
         doc.close()
@@ -570,8 +558,6 @@ def overlay_projected_scaffold_on_scan_pdf(
     if use_tmp:
         save_path.replace(output_pdf)
 
-    if verbose:
-        ok_line(f"Overlay: {total_rects} boxes across {n_overlay} pages")
     return output_pdf
 
 
@@ -582,7 +568,6 @@ def write_scan_page_transforms_json(
     *,
     dpi: int,
     mid_y_pt: float = _RAW_MID_Y_PT,
-    verbose: bool = True,
 ) -> bool:
     """Compute top/bot :class:`SimilarityTransform` per sidecar page; write JSON.
 
@@ -621,10 +606,6 @@ def write_scan_page_transforms_json(
     payload = {"dpi": dpi, "mid_y_pt": mid_y_pt, "pages": pages_out}
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    if verbose:
-        from shared.terminal_ui import ok_line
-
-        ok_line(f"Wrote {output_json.name} ({len(pages_out)} pages)")
     return True
 
 
@@ -637,7 +618,6 @@ def overlay_projected_scaffold_from_transforms_json(
     line_width: float = 0.9,
     scaffold_page: int = 1,
     mid_y_pt: float = _RAW_MID_Y_PT,
-    verbose: bool = True,
 ) -> Path | None:
     """Draw projected scaffold regions using a transforms file from step 9."""
     deskewed_pdf = Path(deskewed_pdf)
@@ -664,7 +644,7 @@ def overlay_projected_scaffold_from_transforms_json(
     px_to_pt = 72.0 / dpi
     all_nodes = flatten_questions(questions)
 
-    from shared.terminal_ui import ok_line, tool_line, warn_line
+    from shared.terminal_ui import warn_line
 
     use_tmp = output_pdf.resolve() == deskewed_pdf.resolve()
     save_path = output_pdf.with_suffix(".bbox_overlay_tmp.pdf") if use_tmp else output_pdf
@@ -679,7 +659,6 @@ def overlay_projected_scaffold_from_transforms_json(
                 f"— overlaying min({n_tf}, {n_doc}) pages"
             )
 
-        total_rects = 0
         n_overlay = min(n_doc, n_tf)
         for page_idx in range(n_overlay):
             page = doc[page_idx]
@@ -717,15 +696,6 @@ def overlay_projected_scaffold_from_transforms_json(
             for r, color in exercise + eq_blank:
                 page.draw_rect(r, color=color, width=line_width)
 
-            n_drawn = len(exercise) + len(eq_blank)
-            total_rects += n_drawn
-            if verbose:
-                tool_line(
-                    "overlay",
-                    f"page {page_idx + 1}/{n_doc} · {n_drawn} rects "
-                    f"(exercise={len(exercise)} eq_blank={len(eq_blank)})",
-                )
-
         doc.save(str(save_path), garbage=4, deflate=True)
     finally:
         doc.close()
@@ -733,8 +703,6 @@ def overlay_projected_scaffold_from_transforms_json(
     if use_tmp:
         save_path.replace(output_pdf)
 
-    if verbose:
-        ok_line(f"Overlay: {total_rects} boxes across {n_overlay} pages")
     return output_pdf
 
 

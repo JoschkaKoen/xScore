@@ -90,7 +90,7 @@ def detect_blank_pages_phase(
     bs = blank_std if blank_std is not None else BLANK_STD_THRESHOLD
 
     total_pages, content_page_nums, blank_page_nums, page_render_sizes = (
-        detect_blank_page_lists(source_pdf, blank_mean=bm, blank_std=bs, verbose=False)
+        detect_blank_page_lists(source_pdf, blank_mean=bm, blank_std=bs)
     )
     if not content_page_nums:
         raise RuntimeError("All scan pages classified as blank — nothing to process.")
@@ -118,7 +118,6 @@ def autorotate_phase(
     artifact_dir: Path,
     *,
     output_pdf: Path | None = None,
-    verbose: bool = False,
 ) -> Path:
     """Step 6: read ``scan_blanks.json``, write rotated PDF (blanks dropped)."""
     from preprocessing.remove_blanks_autorotate import (
@@ -144,7 +143,6 @@ def autorotate_phase(
         blank_page_nums=list(state["blank_page_nums"]),
         page_render_sizes=state["page_render_sizes"],
         analysis_dpi=int(state["analysis_dpi"]),
-        verbose=verbose,
         use_tesseract_rotation=bool(state["use_tesseract_rotation"]),
     )
     return out
@@ -156,7 +154,6 @@ def deskew_phase(
     dpi: int,
     *,
     input_pdf: Path | None = None,
-    verbose: bool = False,
 ) -> Path:
     """Step 7: deskew ``scan_rotated.pdf`` (or *input_pdf*) into ``cleaned_scan.pdf``."""
     from preprocessing.deskew import deskew_pdf_raster
@@ -173,7 +170,6 @@ def deskew_phase(
         output_pdf=tmp_deskew,
         dpi=dpi,
         reflines_sidecar=out.with_name(f"{out.stem}_anchors.json"),
-        verbose=verbose,
         saved_as=out.name,
     )
     shutil.move(str(tmp_deskew), str(out))
@@ -184,8 +180,6 @@ def detect_page_anchors_phase(
     folder: Path,
     artifact_dir: Path,
     dpi: int,
-    *,
-    verbose: bool = False,
 ) -> None:
     """Step 8: fill IGCSE header anchors in the deskew sidecar."""
     del folder  # reserved for API symmetry with other phases
@@ -198,7 +192,7 @@ def detect_page_anchors_phase(
         raise FileNotFoundError(f"Missing {deskewed.name} — run deskew first.")
     if not sidecar.is_file():
         raise FileNotFoundError(f"Missing {sidecar.name} — run deskew first.")
-    detect_page_anchors_for_cleaned_scan(deskewed, sidecar, dpi, verbose=verbose)
+    detect_page_anchors_for_cleaned_scan(deskewed, sidecar, dpi)
 
 
 def compute_transformation_phase(
@@ -206,7 +200,6 @@ def compute_transformation_phase(
     artifact_dir: Path,
     dpi: int,
     *,
-    verbose: bool = False,
     force_layout_mismatch: bool = False,
 ) -> Path | None:
     """Step 9: write ``cleaned_scan_transforms.json`` (4-up ↔ scan similarity per page)."""
@@ -216,7 +209,7 @@ def compute_transformation_phase(
         write_scan_page_transforms_json,
     )
     from scaffold.generate_scaffold import _find_exam_pdf
-    from shared.terminal_ui import info_line, ok_line, warn_line
+    from shared.terminal_ui import info_line, ok_line
 
     paths = _scan_phase_paths(artifact_dir)
     deskewed = paths["cleaned"]
@@ -228,7 +221,7 @@ def compute_transformation_phase(
     raw4 = find_raw_four_up_pdf(folder)
     if raw4 is None:
         msg = "No *4up* raw exam PDF — skip transforms JSON"
-        (warn_line if verbose else info_line)(msg)
+        info_line(msg)
         if transforms_path.is_file():
             transforms_path.unlink()
         return None
@@ -236,7 +229,7 @@ def compute_transformation_phase(
     try:
         exam_for_scaffold = _find_exam_pdf(folder)
     except FileNotFoundError:
-        (warn_line if verbose else info_line)("No raw exam PDF — skip transforms JSON")
+        info_line("No raw exam PDF — skip transforms JSON")
         if transforms_path.is_file():
             transforms_path.unlink()
         return None
@@ -245,16 +238,14 @@ def compute_transformation_phase(
         msg = (
             "Skip transforms JSON: exam PDF used for scaffold does not match the four-up file."
         )
-        (warn_line if verbose else info_line)(msg)
+        info_line(msg)
         if transforms_path.is_file():
             transforms_path.unlink()
         return None
 
     sidecar = resolve_deskew_sidecar(deskewed)
     if sidecar is None or not sidecar.is_file():
-        (warn_line if verbose else info_line)(
-            "Missing anchor sidecar — skip transforms JSON"
-        )
+        info_line("Missing anchor sidecar — skip transforms JSON")
         if transforms_path.is_file():
             transforms_path.unlink()
         return None
@@ -264,7 +255,6 @@ def compute_transformation_phase(
         sidecar,
         transforms_path,
         dpi=dpi,
-        verbose=verbose,
     ):
         ok_line("Done")
         return transforms_path
@@ -278,7 +268,6 @@ def project_bounding_boxes_phase(
     artifact_dir: Path,
     dpi: int,
     *,
-    verbose: bool = False,
     force_layout_mismatch: bool = False,
 ) -> Path | None:
     """Step 10: draw ``*_projected_boxes.pdf`` using transforms from step 9."""
@@ -289,7 +278,7 @@ def project_bounding_boxes_phase(
         overlay_projected_scaffold_from_transforms_json,
         overlay_projected_scaffold_on_scan_pdf,
     )
-    from shared.terminal_ui import info_line, warn_line
+    from shared.terminal_ui import info_line
 
     paths = _scan_phase_paths(artifact_dir)
     deskewed = paths["cleaned"]
@@ -303,34 +292,34 @@ def project_bounding_boxes_phase(
 
     raw4 = find_raw_four_up_pdf(folder)
     if raw4 is None:
-        (warn_line if verbose else info_line)(
-            "No *4up* raw exam PDF — skip projected scaffold PDF"
-        )
+        info_line("No *4up* raw exam PDF — skip projected scaffold PDF")
         return None
     try:
         exam_for_scaffold = _find_exam_pdf(folder)
     except FileNotFoundError:
-        (warn_line if verbose else info_line)("No raw exam PDF — skip projected scaffold PDF")
+        info_line("No raw exam PDF — skip projected scaffold PDF")
         return None
     if not force_layout_mismatch and exam_for_scaffold.resolve() != raw4.resolve():
-        (warn_line if verbose else info_line)(
+        info_line(
             "Skip projected PDF: scaffold exam PDF does not match the four-up file."
         )
         return None
 
     sidecar = resolve_deskew_sidecar(deskewed)
     if sidecar is None:
-        (warn_line if verbose else info_line)("Missing anchor sidecar — skip projected PDF")
+        info_line("Missing anchor sidecar — skip projected PDF")
         return None
 
     try:
         scaffold = build_scaffold(
             folder,
             artifact_dir=ad,
-            quiet=not verbose,
+            quiet=True,
         )
         roots = scaffold.questions
     except Exception as e:
+        from shared.terminal_ui import warn_line
+
         warn_line(f"Could not load scaffold for projected overlay: {e}")
         return None
 
@@ -341,10 +330,9 @@ def project_bounding_boxes_phase(
                 transforms_path,
                 roots,
                 projected,
-                verbose=verbose,
             )
             return out if out is not None and out.is_file() else None
-        (warn_line if verbose else info_line)(
+        info_line(
             "No transforms file — drawing projected boxes using sidecar (legacy path)"
         )
         overlay_projected_scaffold_on_scan_pdf(
@@ -354,10 +342,11 @@ def project_bounding_boxes_phase(
             roots,
             projected,
             dpi=dpi,
-            verbose=verbose,
         )
         return projected if projected.is_file() else None
     except Exception as e:
+        from shared.terminal_ui import warn_line
+
         warn_line(f"Projected scaffold overlay failed: {e}")
         return None
 
@@ -366,16 +355,14 @@ def calculate_transformation_phase(
     folder: Path,
     artifact_dir: Path,
     dpi: int,
-    *,
-    verbose: bool = False,
 ) -> Path | None:
     """Run steps 9–10 only (transforms JSON + projected boxes PDF).
 
     Prefer calling :func:`compute_transformation_phase` and
     :func:`project_bounding_boxes_phase` separately from the CLI.
     """
-    compute_transformation_phase(folder, artifact_dir, dpi, verbose=verbose)
-    return project_bounding_boxes_phase(folder, artifact_dir, dpi, verbose=verbose)
+    compute_transformation_phase(folder, artifact_dir, dpi)
+    return project_bounding_boxes_phase(folder, artifact_dir, dpi)
 
 
 def cleanup_pdf(
@@ -459,12 +446,12 @@ def cleanup_pdf(
         force_clean_scan=False,
     )
     if deskew:
-        autorotate_phase(ad, verbose=False)
-        deskew_phase(folder, ad, dpi, verbose=False)
-        detect_page_anchors_phase(folder, ad, dpi, verbose=False)
-        compute_transformation_phase(folder, ad, dpi, verbose=False)
-        project_bounding_boxes_phase(folder, ad, dpi, verbose=False)
+        autorotate_phase(ad)
+        deskew_phase(folder, ad, dpi)
+        detect_page_anchors_phase(folder, ad, dpi)
+        compute_transformation_phase(folder, ad, dpi)
+        project_bounding_boxes_phase(folder, ad, dpi)
     else:
-        autorotate_phase(ad, output_pdf=output, verbose=False)
+        autorotate_phase(ad, output_pdf=output)
 
     return output

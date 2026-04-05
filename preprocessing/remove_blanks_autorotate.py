@@ -26,8 +26,6 @@ import numpy as np
 import pikepdf
 from pdf2image import convert_from_path
 from PIL import Image
-from rich import box
-from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     Progress,
@@ -35,8 +33,6 @@ from rich.progress import (
     TaskProgressColumn,
     TextColumn,
 )
-from rich.table import Table
-
 from shared.terminal_ui import CompactElapsedColumn
 
 # ---------------------------------------------------------------------------
@@ -104,18 +100,12 @@ def _rotation_map_from_tesseract_osd(
     content_page_nums: list[int],
     *,
     console,
-    verbose: bool,
 ) -> dict[int, int]:
     """Run parallel Tesseract OSD on content pages; return page_num → extra CCW rotation."""
     from shared.terminal_ui import PROGRESS_TASK_TEXT
 
     _tc = os.cpu_count() or 4
     num_workers = min(_tc, len(content_page_nums))
-    if verbose:
-        console.print(
-            f"  Tesseract OSD on {len(content_page_nums)} content pages "
-            f"({num_workers} workers)"
-        )
 
     rotation_map: dict[int, int] = {}
     osd_inputs = [(pn, hi_res_pages[pn - 1]) for pn in content_page_nums]
@@ -169,7 +159,6 @@ def detect_blank_page_lists(
     *,
     blank_mean: float = BLANK_MEAN_THRESHOLD,
     blank_std: float = BLANK_STD_THRESHOLD,
-    verbose: bool = False,
 ) -> tuple[int, list[int], list[int], list[tuple[int, int]]]:
     """Raster at :data:`BLANK_DPI`, classify pages; return counts and render sizes per page."""
     input_path = Path(input_path)
@@ -180,24 +169,13 @@ def detect_blank_page_lists(
 
     c = get_console()
     _tc = os.cpu_count() or 4
-    if verbose:
-        c.print(
-            f"\n[bold cyan]  Pass 1: blank detection @ {BLANK_DPI} DPI[/]"
-        )
-        low_res_pages = convert_from_path(
-            str(input_path),
-            dpi=BLANK_DPI,
-            grayscale=True,
-            thread_count=_tc,
-        )
-    else:
-        low_res_pages = _raster_with_spinner(
-            f"Blank detection ({BLANK_DPI} DPI)",
-            lambda: convert_from_path(
-                str(input_path), dpi=BLANK_DPI, grayscale=True, thread_count=_tc
-            ),
-            console=c,
-        )
+    low_res_pages = _raster_with_spinner(
+        f"Blank detection ({BLANK_DPI} DPI)",
+        lambda: convert_from_path(
+            str(input_path), dpi=BLANK_DPI, grayscale=True, thread_count=_tc
+        ),
+        console=c,
+    )
     total_pages = len(low_res_pages)
     content_page_nums: list[int] = []
     blank_page_nums: list[int] = []
@@ -221,7 +199,6 @@ def write_rotated_pdf_after_blanks(
     blank_page_nums: list[int],
     page_render_sizes: list[tuple[int, int]],
     analysis_dpi: int = ANALYSIS_DPI,
-    verbose: bool = True,
     use_tesseract_rotation: bool | None = None,
 ) -> None:
     """Build PDF with blank pages dropped and rotation applied (scanner /Rotate or OSD)."""
@@ -233,14 +210,7 @@ def write_rotated_pdf_after_blanks(
 
         use_tesseract_rotation = SCAN_USE_TESSERACT_ROTATION
 
-    from shared.terminal_ui import (
-        err_line,
-        get_console,
-        icon,
-        note_line,
-        ok_line,
-        warn_line,
-    )
+    from shared.terminal_ui import err_line, get_console, ok_line, warn_line
 
     if input_path.resolve() == output_path.resolve():
         err_line(
@@ -259,36 +229,22 @@ def write_rotated_pdf_after_blanks(
     landscape_pages: set[int] = set()
 
     if use_tesseract_rotation:
-        if verbose:
-            c.print(
-                f"\n[bold cyan]  {icon('gear')}  Pass 2: raster @ {analysis_dpi} DPI for OSD[/]"
-            )
-            hi_res_pages = convert_from_path(
+        hi_res_pages = _raster_with_spinner(
+            f"Rotation detection ({analysis_dpi} DPI)",
+            lambda: convert_from_path(
                 str(input_path),
                 dpi=analysis_dpi,
                 grayscale=True,
                 thread_count=_tc,
-            )
-        else:
-            hi_res_pages = _raster_with_spinner(
-                f"Rotation detection ({analysis_dpi} DPI)",
-                lambda: convert_from_path(
-                    str(input_path),
-                    dpi=analysis_dpi,
-                    grayscale=True,
-                    thread_count=_tc,
-                ),
-                console=c,
-            )
+            ),
+            console=c,
+        )
 
         rotation_map = _rotation_map_from_tesseract_osd(
-            hi_res_pages, content_page_nums, console=c, verbose=verbose
+            hi_res_pages, content_page_nums, console=c
         )
         del hi_res_pages
     else:
-        if verbose:
-            c.print()
-            note_line("Using scanner /Rotate metadata — Tesseract OSD skipped.")
         rotation_map = {pn: 0 for pn in content_page_nums}
         landscape_pages = {
             pn
@@ -296,67 +252,37 @@ def write_rotated_pdf_after_blanks(
             if page_render_sizes[pn - 1][0] > page_render_sizes[pn - 1][1]
         }
 
-    if verbose:
-        rot_table = Table(
-            box=box.SIMPLE,
-            show_header=True,
-            header_style="bold cyan",
-            title=f"{icon('chart')}  Rotation summary",
-            title_style="bold cyan",
+    if use_tesseract_rotation:
+        rotated = sum(1 for a in rotation_map.values() if a != 0)
+        rot_s = (
+            f"{rotated} page(s) rotated via Tesseract OSD"
+            if rotated
+            else "All pages already upright"
         )
-        rot_table.add_column("Page", justify="right", style="dim")
-        rot_table.add_column("Status", overflow="fold")
-
-        if use_tesseract_rotation:
-            for pn in sorted(rotation_map):
-                angle = rotation_map[pn]
-                status = f"rotate {angle}°" if angle != 0 else "ok"
-                rot_table.add_row(str(pn), status)
-        else:
-            for pn in sorted(content_page_nums):
-                deg = _normalized_page_rotate(src_pdf.pages[pn - 1])
-                if pn in landscape_pages:
-                    rot_table.add_row(str(pn), f"{deg}° → 0° (layout fix)")
-                else:
-                    rot_table.add_row(str(pn), f"{deg}° (preserved)")
-        for pn in sorted(blank_page_nums):
-            rot_table.add_row(str(pn), "blank (removed)")
-
-        c.print()
-        c.print(Panel(rot_table, border_style="dim cyan"))
-
     else:
-        if use_tesseract_rotation:
-            rotated = sum(1 for a in rotation_map.values() if a != 0)
+        rots: list[int] = []
+        for pn in content_page_nums:
+            if pn in landscape_pages:
+                rots.append(0)
+            else:
+                rots.append(_normalized_page_rotate(src_pdf.pages[pn - 1]))
+        cnt = Counter(rots)
+        n_land = len(landscape_pages)
+        n_kept = len(content_page_nums)
+        if n_land == n_kept:
+            rot_s = f"All {n_kept} pages corrected from landscape to portrait"
+        elif n_land:
+            rot_s = f"{n_land} of {n_kept} pages corrected from landscape to portrait"
+        elif len(cnt) == 1:
+            only_deg = next(iter(cnt))
             rot_s = (
-                f"{rotated} page(s) rotated via Tesseract OSD"
-                if rotated
-                else "All pages already upright"
+                "All pages already upright"
+                if only_deg == 0
+                else f"All pages at {only_deg}°"
             )
         else:
-            rots: list[int] = []
-            for pn in content_page_nums:
-                if pn in landscape_pages:
-                    rots.append(0)
-                else:
-                    rots.append(_normalized_page_rotate(src_pdf.pages[pn - 1]))
-            cnt = Counter(rots)
-            n_land = len(landscape_pages)
-            n_kept = len(content_page_nums)
-            if n_land == n_kept:
-                rot_s = f"All {n_kept} pages corrected from landscape to portrait"
-            elif n_land:
-                rot_s = f"{n_land} of {n_kept} pages corrected from landscape to portrait"
-            elif len(cnt) == 1:
-                only_deg = next(iter(cnt))
-                rot_s = (
-                    "All pages already upright"
-                    if only_deg == 0
-                    else f"All pages at {only_deg}°"
-                )
-            else:
-                parts = [f"{n} at {deg}°" for deg, n in sorted(cnt.items())]
-                rot_s = "Mixed orientation: " + ", ".join(parts)
+            parts = [f"{n} at {deg}°" for deg, n in sorted(cnt.items())]
+            rot_s = "Mixed orientation: " + ", ".join(parts)
 
     out_pdf = pikepdf.new()
 
@@ -376,26 +302,18 @@ def write_rotated_pdf_after_blanks(
 
         out_pdf.pages.append(src_page)
 
-    if verbose:
-        note_line(f"Pages retained: {len(content_page_nums)}/{total_pages}")
-        note_line("Saving cleaned PDF …")
-
     out_pdf.save(str(output_path))
     out_pdf.close()
     src_pdf.close()
 
-    if verbose:
-        ok_line("Blank drop + rotation complete.")
-        c.print()
+    kept = len(content_page_nums)
+    blanks = len(blank_page_nums)
+    if blanks:
+        page_s = f"{kept} of {total_pages} pages  ·  {blanks} blank pages dropped"
     else:
-        kept = len(content_page_nums)
-        blanks = len(blank_page_nums)
-        if blanks:
-            page_s = f"{kept} of {total_pages} pages  ·  {blanks} blank pages dropped"
-        else:
-            page_s = f"{kept} pages  ·  no blanks"
-        ok_line(page_s)
-        ok_line(rot_s)
+        page_s = f"{kept} pages  ·  no blanks"
+    ok_line(page_s)
+    ok_line(rot_s)
 
 
 def scan_blanks_state_to_json(
@@ -443,7 +361,6 @@ def process_pdf(
     blank_mean: float = BLANK_MEAN_THRESHOLD,
     blank_std: float = BLANK_STD_THRESHOLD,
     *,
-    verbose: bool = True,
     use_tesseract_rotation: bool | None = None,
 ) -> None:
     """Blank detection; optional Tesseract OSD rotation; write PDF to *output_path*.
@@ -466,14 +383,7 @@ def process_pdf(
 
         use_tesseract_rotation = SCAN_USE_TESSERACT_ROTATION
 
-    from shared.terminal_ui import (
-        err_line,
-        get_console,
-        icon,
-        note_line,
-        ok_line,
-        warn_line,
-    )
+    from shared.terminal_ui import err_line
 
     if input_path.resolve() == output_path.resolve():
         err_line(
@@ -486,40 +396,13 @@ def process_pdf(
         err_line(f"Input file not found: {input_path}")
         sys.exit(1)
 
-    c = get_console()
-
-    if verbose:
-        c.print()
-        c.print(
-            Panel(
-                f"[bold cyan]{icon('doc')}  PDF prep[/]",
-                border_style="dim cyan",
-            )
-        )
-        if use_tesseract_rotation:
-            note_line(
-                f"Blank pass @ {BLANK_DPI} DPI  |  OSD pass @ {analysis_dpi} DPI  |  "
-                f"Blank: mean≥{blank_mean}, std≤{blank_std}"
-            )
-        else:
-            note_line(
-                f"Blank pass @ {BLANK_DPI} DPI  |  Rotation: PDF /Rotate (scanner)  |  "
-                f"Blank: mean≥{blank_mean}, std≤{blank_std}"
-            )
-
     total_pages, content_page_nums, blank_page_nums, page_render_sizes = (
         detect_blank_page_lists(
             input_path,
             blank_mean=blank_mean,
             blank_std=blank_std,
-            verbose=verbose,
         )
     )
-    if verbose:
-        c.print(f"  Total pages: {total_pages}")
-        c.print(
-            f"  → {len(blank_page_nums)} blank pages, {len(content_page_nums)} content pages"
-        )
 
     write_rotated_pdf_after_blanks(
         input_path,
@@ -529,6 +412,5 @@ def process_pdf(
         blank_page_nums=blank_page_nums,
         page_render_sizes=page_render_sizes,
         analysis_dpi=analysis_dpi,
-        verbose=verbose,
         use_tesseract_rotation=use_tesseract_rotation,
     )
