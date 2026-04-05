@@ -91,6 +91,12 @@ CLEANED_SCAN_JPEG_QUALITY = int(os.getenv("CLEANED_SCAN_JPEG_QUALITY", "95"))
 _scan_tess_rot = os.getenv("SCAN_USE_TESSERACT_ROTATION", "").strip().lower()
 SCAN_USE_TESSERACT_ROTATION: bool = _scan_tess_rot in ("1", "true", "yes", "on")
 
+# After each half is deskewed, optionally run morphological vertical ruling-line detection.
+# Default off (sidecar ``top`` / ``bot`` arrays stay empty). Set ``XSCORE_DESKEW_REFERENCE_LINES=1``
+# to enable (debug reflines overlay only; IGCSE anchors are separate).
+_deskew_refl = os.getenv("XSCORE_DESKEW_REFERENCE_LINES", "").strip().lower()
+DESKEW_DETECT_REFERENCE_LINES: bool = _deskew_refl in ("1", "true", "yes", "on")
+
 # Fraction of page to crop from top. 0.6 = top 60% of page.
 # The answer section is typically in the top half of the page.
 CROP_TOP_FRACTION = 0.6

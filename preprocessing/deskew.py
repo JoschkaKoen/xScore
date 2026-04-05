@@ -6,7 +6,8 @@ correction are performed **per half** and the halves are reassembled.
 
 The sidecar ``<stem>_anchors.json`` (next to the output PDF by default, or set
 via ``reflines_sidecar``) stores **vertical ruling lines** per half (``top`` /
-``bot``) from :func:`detect_reference_lines`. **IGCSE header anchors** are written
+``bot``) from :func:`detect_reference_lines` when ``config.DESKEW_DETECT_REFERENCE_LINES``
+is true (default false). **IGCSE header anchors** are written
 as ``null`` by :func:`deskew_pdf_raster` and filled later by
 :func:`detect_page_anchors_for_cleaned_scan` (pipeline step 8).  Older runs may still
 have ``<stem>_reflines.json``; :func:`resolve_deskew_sidecar` finds either.  *input_pdf*
@@ -451,12 +452,14 @@ def deskew_page_halves(
 ) -> tuple[np.ndarray, float, float, list[ReferenceLine], list[ReferenceLine]]:
     """Split *page_gray* at the vertical midpoint, deskew each half separately.
 
-    After deskew, runs :func:`detect_reference_lines` on each half to locate the
-    printed vertical ruling lines (typically three per half).
+    After deskew, optionally runs :func:`detect_reference_lines` on each half
+    (see ``config.DESKEW_DETECT_REFERENCE_LINES``; default off).
 
     Returns:
         (deskewed_full_page, top_angle, bot_angle, top_lines, bot_lines)
     """
+    from config import DESKEW_DETECT_REFERENCE_LINES
+
     h = page_gray.shape[0]
     mid = h // 2
 
@@ -471,9 +474,13 @@ def deskew_page_halves(
     top_fixed = deskew_image(top, top_angle)
     bot_fixed = deskew_image(bot, bot_angle)
 
-    # 3) Vertical ruling lines: only on straightened halves.
-    top_lines = detect_reference_lines(top_fixed)
-    bot_lines = detect_reference_lines(bot_fixed)
+    # 3) Vertical ruling lines (optional; heavy morphology — off by default).
+    if DESKEW_DETECT_REFERENCE_LINES:
+        top_lines = detect_reference_lines(top_fixed)
+        bot_lines = detect_reference_lines(bot_fixed)
+    else:
+        top_lines = []
+        bot_lines = []
 
     return np.vstack([top_fixed, bot_fixed]), top_angle, bot_angle, top_lines, bot_lines
 
@@ -816,14 +823,21 @@ def deskew_pdf_raster(
     if not verbose:
         ok_line(f"Saved scan · {format_duration(time.perf_counter() - t_write)}")
     else:
-        ref_ok = sum(
-            1
-            for i in range(n)
-            if len(results[i][3]) == 3 and len(results[i][4]) == 3
-        )
-        ok_line(
-            f"Pages aligned · vertical ref-lines 3+3 on {ref_ok}/{n} pages"
-        )
+        from config import DESKEW_DETECT_REFERENCE_LINES
+
+        if DESKEW_DETECT_REFERENCE_LINES:
+            ref_ok = sum(
+                1
+                for i in range(n)
+                if len(results[i][3]) == 3 and len(results[i][4]) == 3
+            )
+            ok_line(
+                f"Pages aligned · vertical ref-lines 3+3 on {ref_ok}/{n} pages"
+            )
+        else:
+            ok_line(
+                f"Pages aligned · vertical ref-line detection off ({n} pages)"
+            )
     return output_pdf
 
 
