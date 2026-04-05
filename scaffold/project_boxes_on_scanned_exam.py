@@ -81,6 +81,11 @@ _RAW_MID_Y_PT: float = 420.9
 #: Horizontal midpoint (pt) of the 4-up page — divides left from right sub-pages.
 _RAW_MID_X_PT: float = 297.6
 
+#: Step 10 projected overlay: trim this many PDF points from the left edge of every box.
+_PROJECTED_TRIM_LEFT_PT: float = 22.0
+#: Step 10: nudge boxes in the right column upward (PDF y decreases upward).
+_PROJECTED_RIGHT_COLUMN_UP_PT: float = 2.0
+
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -316,11 +321,39 @@ def compute_page_transforms(
 # Bbox projection
 # ---------------------------------------------------------------------------
 
+def _adjust_raw_bbox_for_projected_overlay(
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    *,
+    mid_x: float = _RAW_MID_X_PT,
+) -> tuple[float, float, float, float]:
+    """Tweaks in 4-up PDF space before similarity projection (step 10 overlay).
+
+    - Every box: move the left edge right by :data:`_PROJECTED_TRIM_LEFT_PT` (trim
+      from the left).
+    - Right column (bbox center ``>= mid_x``): shift up by
+      :data:`_PROJECTED_RIGHT_COLUMN_UP_PT` (PDF coordinates, y downward).
+    """
+    cx = (x0 + x1) / 2.0
+    x0_adj = x0 + _PROJECTED_TRIM_LEFT_PT
+    if x0_adj >= x1:
+        x0_adj = x1 - 0.5
+    if cx >= mid_x:
+        y0_adj = y0 - _PROJECTED_RIGHT_COLUMN_UP_PT
+        y1_adj = y1 - _PROJECTED_RIGHT_COLUMN_UP_PT
+    else:
+        y0_adj, y1_adj = y0, y1
+    return x0_adj, y0_adj, x1, y1_adj
+
+
 def project_scaffold_bbox(
     bbox,
     top_transform: SimilarityTransform,
     bot_transform: SimilarityTransform,
     mid_y: float = _RAW_MID_Y_PT,
+    mid_x: float = _RAW_MID_X_PT,
 ) -> tuple[float, float, float, float]:
     """Project one scaffold bbox from 4-up PDF space to half-page scan pixels.
 
@@ -331,6 +364,10 @@ def project_scaffold_bbox(
     In both cases the returned coordinates are relative to the **top of that
     half** (y=0 = first row of the top or bottom half-page image).
 
+    Before projection, raw PDF coordinates are adjusted for the step 10 overlay
+    (left trim and a small upward nudge on the right column); see
+    :func:`_adjust_raw_bbox_for_projected_overlay`.
+
     Args:
         bbox:          A :class:`shared.models.BBox` (or any object with
                        ``.x0``, ``.y0``, ``.x1``, ``.y1`` attributes), in
@@ -339,13 +376,22 @@ def project_scaffold_bbox(
         bot_transform: Transform for bboxes whose ``y0`` is in the bottom half.
         mid_y:         The y-coordinate (pt) that divides top from bottom half
                        on the 4-up page.  Defaults to 420.9 pt.
+        mid_x:         The x-coordinate (pt) that divides left from right
+                       sub-page columns.  Defaults to 297.6 pt.
 
     Returns:
         ``(x0_px, y0_px, x1_px, y1_px)`` in half-page pixel coordinates
         (floats; caller should round/clip as needed for cropping).
     """
     tf = top_transform if bbox.y0 < mid_y else bot_transform
-    return tf.project_bbox(bbox.x0, bbox.y0, bbox.x1, bbox.y1)
+    x0, y0, x1, y1 = _adjust_raw_bbox_for_projected_overlay(
+        float(bbox.x0),
+        float(bbox.y0),
+        float(bbox.x1),
+        float(bbox.y1),
+        mid_x=mid_x,
+    )
+    return tf.project_bbox(x0, y0, x1, y1)
 
 
 def project_all_scaffold_bboxes(
