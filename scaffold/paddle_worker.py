@@ -11,9 +11,13 @@ from __future__ import annotations
 import json
 import sys
 
-from paddleocr import PPStructure
+import os
 
-engine = PPStructure(layout=True, show_log=False, lang="en")
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+
+from paddleocr import PPStructureV3
+
+engine = PPStructureV3()
 
 results: list[bool] = []
 for path in sys.argv[1:]:

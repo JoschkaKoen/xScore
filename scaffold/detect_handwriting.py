@@ -45,13 +45,12 @@ def _run_paddle_worker(crop_paths: list[Path]) -> list[bool]:
         )
     result = subprocess.run(
         [str(_PADDLE_PYTHON), str(_WORKER)] + [str(p) for p in crop_paths],
-        capture_output=True,
+        stdout=subprocess.PIPE,  # capture JSON result
+        stderr=None,             # let paddle logs print directly to terminal
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"paddle_worker failed (exit {result.returncode}):\n{result.stderr}"
-        )
+        raise RuntimeError(f"paddle_worker failed (exit {result.returncode})")
     return json.loads(result.stdout)
 
 
