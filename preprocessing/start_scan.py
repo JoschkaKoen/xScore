@@ -11,6 +11,7 @@ SCAN_ROTATED_PDF = "scan_rotated.pdf"
 CLEANED_SCAN_PDF = "cleaned_scan.pdf"
 CLEANED_SCAN_TRANSFORMS_JSON = "cleaned_scan_transforms.json"
 PROJECTED_BOXES_SUFFIX = "_projected_boxes.pdf"
+PROJECTED_BOXES_JSON = "scan_projected_boxes.json"
 REFINED_BOXES_SUFFIX = "_refined_boxes.pdf"
 HANDWRITING_RESULTS_JSON = "scan_handwriting_results.json"
 
@@ -27,6 +28,7 @@ def _scan_phase_paths(artifact_dir: Path) -> dict[str, Path]:
         "deskew_tmp": ad / f"{out.stem}_deskew_tmp{out.suffix}",
         "projected": out.with_name(out.stem + PROJECTED_BOXES_SUFFIX),
         "transforms": ad / CLEANED_SCAN_TRANSFORMS_JSON,
+        "projected_boxes_json": ad / PROJECTED_BOXES_JSON,
         "refined": out.with_name(out.stem + REFINED_BOXES_SUFFIX),
         "hw_results": ad / HANDWRITING_RESULTS_JSON,
     }
@@ -334,6 +336,7 @@ def project_bounding_boxes_phase(
                 transforms_path,
                 roots,
                 projected,
+                boxes_json=paths["projected_boxes_json"],
             )
             return out if out is not None and out.is_file() else None
         info_line(

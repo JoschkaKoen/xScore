@@ -713,6 +713,7 @@ def overlay_projected_scaffold_from_transforms_json(
     questions: list[Question],
     output_pdf: Path,
     *,
+    boxes_json: Path | None = None,
     line_width: float = 0.9,
     scaffold_page: int = 1,
     mid_y_pt: float = _RAW_MID_Y_PT,
@@ -758,6 +759,7 @@ def overlay_projected_scaffold_from_transforms_json(
             )
 
         n_overlay = min(n_doc, n_tf)
+        pages_data: list[dict] = []
         for page_idx in range(n_overlay):
             page = doc[page_idx]
             mid_px = int(round(page.rect.height / px_to_pt)) // 2
@@ -790,18 +792,32 @@ def overlay_projected_scaffold_from_transforms_json(
                     else:
                         exercise.append((r, color))
 
-            yellow = [
-                (yr, _YELLOW)
-                for yr in compute_yellow_rects_for_page(
-                    page, all_nodes, top_tf, bot_tf,
-                    px_to_pt=px_to_pt,
-                    scaffold_page=scaffold_page,
-                    mid_y_pt=file_mid,
-                )
-            ]
+            yellow_rects = compute_yellow_rects_for_page(
+                page, all_nodes, top_tf, bot_tf,
+                px_to_pt=px_to_pt,
+                scaffold_page=scaffold_page,
+                mid_y_pt=file_mid,
+            )
+            yellow = [(yr, _YELLOW) for yr in yellow_rects]
 
             for r, color in exercise + eq_blank + yellow:
                 page.draw_rect(r, color=color, width=line_width)
+
+            pages_data.append({
+                "page_idx": page_idx,
+                "exercise": [
+                    {"rect": [r.x0, r.y0, r.x1, r.y1], "color": list(c)}
+                    for r, c in exercise
+                ],
+                "eq_blank": [
+                    {"rect": [r.x0, r.y0, r.x1, r.y1]}
+                    for r, _ in eq_blank
+                ],
+                "yellow": [
+                    {"rect": [r.x0, r.y0, r.x1, r.y1]}
+                    for r in yellow_rects
+                ],
+            })
 
         doc.save(str(save_path), garbage=4, deflate=True)
     finally:
@@ -809,6 +825,12 @@ def overlay_projected_scaffold_from_transforms_json(
 
     if use_tmp:
         save_path.replace(output_pdf)
+
+    if boxes_json is not None:
+        boxes_json.write_text(
+            json.dumps({"dpi": dpi, "pages": pages_data}, indent=2),
+            encoding="utf-8",
+        )
 
     return output_pdf
 
