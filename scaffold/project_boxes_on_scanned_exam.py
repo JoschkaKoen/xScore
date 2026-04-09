@@ -69,7 +69,7 @@ from typing import NamedTuple
 import fitz  # PyMuPDF
 
 from shared.models import BBox, Question, flatten_questions
-from scaffold.draw_boxes_on_empty_exam import _TEAL, _hsv_color
+from scaffold.draw_boxes_on_empty_exam import _TEAL, _YELLOW, _hsv_color
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -567,11 +567,14 @@ def overlay_projected_scaffold_on_scan_pdf(
             page = doc[page_idx]
             h_px = int(round(page.rect.height / px_to_pt))
             mid_px = h_px // 2
+            page_w = page.rect.width
+            page_mid_x = page_w / 2.0
 
             top_tf, bot_tf = compute_page_transforms(raw_anchors, entry["anchors"])
 
             exercise: list[tuple[fitz.Rect, tuple[float, float, float]]] = []
             eq_blank: list[tuple[fitz.Rect, tuple[float, float, float]]] = []
+            yellow: list[tuple[fitz.Rect, tuple[float, float, float]]] = []
 
             for color_idx, node in enumerate(all_nodes):
                 for half, quad, color, is_eq in _projected_items_for_question_node(
@@ -593,8 +596,15 @@ def overlay_projected_scaffold_on_scan_pdf(
                         eq_blank.append((r, color))
                     else:
                         exercise.append((r, color))
+                        r_cx = (r.x0 + r.x1) / 2.0
+                        if r_cx < page_mid_x:
+                            yr = fitz.Rect(0.0, r.y0, r.x0, r.y1).intersect(page.rect)
+                        else:
+                            yr = fitz.Rect(r.x1, r.y0, page_w, r.y1).intersect(page.rect)
+                        if not yr.is_empty:
+                            yellow.append((yr, _YELLOW))
 
-            for r, color in exercise + eq_blank:
+            for r, color in exercise + eq_blank + yellow:
                 page.draw_rect(r, color=color, width=line_width)
 
         doc.save(str(save_path), garbage=4, deflate=True)
@@ -710,6 +720,8 @@ def overlay_projected_scaffold_from_transforms_json(
             page = doc[page_idx]
             h_px = int(round(page.rect.height / px_to_pt))
             mid_px = h_px // 2
+            page_w = page.rect.width
+            page_mid_x = page_w / 2.0
 
             pe = page_entries[page_idx]
             top_tf = similarity_transform_from_dict(pe["top"])
@@ -717,6 +729,7 @@ def overlay_projected_scaffold_from_transforms_json(
 
             exercise: list[tuple[fitz.Rect, tuple[float, float, float]]] = []
             eq_blank: list[tuple[fitz.Rect, tuple[float, float, float]]] = []
+            yellow: list[tuple[fitz.Rect, tuple[float, float, float]]] = []
 
             for color_idx, node in enumerate(all_nodes):
                 for half, quad, color, is_eq in _projected_items_for_question_node(
@@ -738,8 +751,15 @@ def overlay_projected_scaffold_from_transforms_json(
                         eq_blank.append((r, color))
                     else:
                         exercise.append((r, color))
+                        r_cx = (r.x0 + r.x1) / 2.0
+                        if r_cx < page_mid_x:
+                            yr = fitz.Rect(0.0, r.y0, r.x0, r.y1).intersect(page.rect)
+                        else:
+                            yr = fitz.Rect(r.x1, r.y0, page_w, r.y1).intersect(page.rect)
+                        if not yr.is_empty:
+                            yellow.append((yr, _YELLOW))
 
-            for r, color in exercise + eq_blank:
+            for r, color in exercise + eq_blank + yellow:
                 page.draw_rect(r, color=color, width=line_width)
 
         doc.save(str(save_path), garbage=4, deflate=True)

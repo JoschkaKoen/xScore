@@ -27,6 +27,7 @@ _HUE_V = 0.92
 
 # Teal for equation-blank answer slots.
 _TEAL = (0.0, 0.52, 0.55)
+_YELLOW: tuple[float, float, float] = (1.0, 0.9, 0.0)
 
 
 def _hsv_color(index: int) -> tuple[float, float, float]:
