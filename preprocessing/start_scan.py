@@ -11,6 +11,8 @@ SCAN_ROTATED_PDF = "scan_rotated.pdf"
 CLEANED_SCAN_PDF = "cleaned_scan.pdf"
 CLEANED_SCAN_TRANSFORMS_JSON = "cleaned_scan_transforms.json"
 PROJECTED_BOXES_SUFFIX = "_projected_boxes.pdf"
+REFINED_BOXES_SUFFIX = "_refined_boxes.pdf"
+HANDWRITING_RESULTS_JSON = "scan_handwriting_results.json"
 
 
 def _scan_phase_paths(artifact_dir: Path) -> dict[str, Path]:
@@ -25,6 +27,8 @@ def _scan_phase_paths(artifact_dir: Path) -> dict[str, Path]:
         "deskew_tmp": ad / f"{out.stem}_deskew_tmp{out.suffix}",
         "projected": out.with_name(out.stem + PROJECTED_BOXES_SUFFIX),
         "transforms": ad / CLEANED_SCAN_TRANSFORMS_JSON,
+        "refined": out.with_name(out.stem + REFINED_BOXES_SUFFIX),
+        "hw_results": ad / HANDWRITING_RESULTS_JSON,
     }
 
 
@@ -349,6 +353,114 @@ def project_bounding_boxes_phase(
 
         warn_line(f"Projected scaffold overlay failed: {e}")
         return None
+
+
+def refine_bounding_boxes_phase(
+    folder: Path,
+    artifact_dir: Path,
+    dpi: int,
+    *,
+    pages_to_check: tuple[int, ...] = (0,),
+) -> Path | None:
+    """Step 11: detect handwriting in yellow margin strips; draw red/green on refined PDF.
+
+    Crops each yellow bbox from the deskewed scan, runs PaddleOCR PPStructure to
+    detect handwriting, then draws red (handwriting present) or green (blank) outlines
+    on a copy of cleaned_scan_projected_boxes.pdf → cleaned_scan_refined_boxes.pdf.
+
+    Args:
+        pages_to_check: Zero-based page indices to analyse. Defaults to page 0 only;
+                        pass ``tuple(range(n))`` to extend to all pages later.
+    """
+    import json
+
+    import fitz
+    from rich.progress import Progress
+
+    from scaffold.detect_handwriting import (
+        HWResult,
+        detect_handwriting_in_rects,
+        make_engine,
+        overlay_refined_boxes,
+    )
+    from scaffold.generate_scaffold import _find_exam_pdf, build_scaffold
+    from scaffold.project_boxes_on_scanned_exam import (
+        compute_yellow_rects_for_page,
+        similarity_transform_from_dict,
+    )
+    from shared.models import flatten_questions
+    from shared.terminal_ui import info_line, warn_line
+
+    paths = _scan_phase_paths(artifact_dir)
+    projected = paths["projected"]
+    refined = paths["refined"]
+    hw_json = paths["hw_results"]
+    transforms_path = paths["transforms"]
+    cleaned = paths["cleaned"]
+
+    if not projected.is_file():
+        warn_line("No projected boxes PDF — run step 10 first.")
+        return None
+    if not transforms_path.is_file():
+        warn_line("No transforms JSON — cannot compute yellow rects (run step 9 first).")
+        return None
+    if not cleaned.is_file():
+        warn_line("No cleaned scan PDF — cannot rasterize pages.")
+        return None
+
+    try:
+        scaffold = build_scaffold(folder, artifact_dir=artifact_dir, quiet=True)
+    except Exception as e:
+        warn_line(f"Could not load scaffold: {e}")
+        return None
+
+    payload = json.loads(transforms_path.read_text())
+    dpi_used = int(payload.get("dpi", dpi))
+    px_to_pt = 72.0 / dpi_used
+    page_entries = payload["pages"]
+    all_nodes = list(flatten_questions(scaffold.questions))
+
+    engine = make_engine()
+    page_results: dict[int, list[HWResult]] = {}
+
+    with Progress() as progress:
+        task = progress.add_task(
+            "Checking yellow strips for handwriting …", total=len(pages_to_check)
+        )
+        doc = fitz.open(str(cleaned))
+        for page_idx in pages_to_check:
+            if page_idx >= len(page_entries) or page_idx >= len(doc):
+                warn_line(f"Page {page_idx} out of range — skipping.")
+                progress.advance(task)
+                continue
+            pe = page_entries[page_idx]
+            top_tf = similarity_transform_from_dict(pe["top"])
+            bot_tf = similarity_transform_from_dict(pe["bot"])
+            page = doc[page_idx]
+            rects = compute_yellow_rects_for_page(
+                page, all_nodes, top_tf, bot_tf, px_to_pt=px_to_pt
+            )
+            hw_results = detect_handwriting_in_rects(
+                cleaned, page_idx, rects, dpi_used, engine
+            )
+            page_results[page_idx] = hw_results
+            progress.advance(task)
+        doc.close()
+
+    serialisable = [
+        {
+            "page": page_idx,
+            "rect": [hw.rect.x0, hw.rect.y0, hw.rect.x1, hw.rect.y1],
+            "has_handwriting": hw.has_handwriting,
+        }
+        for page_idx, results in page_results.items()
+        for hw in results
+    ]
+    hw_json.write_text(json.dumps(serialisable, indent=2))
+    info_line(f"Saved {hw_json.name}")
+
+    overlay_refined_boxes(projected, refined, page_results)
+    return refined
 
 
 def calculate_transformation_phase(
