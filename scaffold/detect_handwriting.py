@@ -1,9 +1,11 @@
 """Detect handwriting in yellow margin-strip regions of a deskewed scan PDF.
 
-Step 11 uses this to classify each yellow bbox as containing student handwriting
-(red overlay) or blank (green overlay), producing cleaned_scan_refined_boxes.pdf.
+Step 13 classifies each yellow bbox as containing student handwriting (red overlay)
+or blank (green overlay), producing cleaned_scan_refined_boxes.pdf.
 
-PaddleOCR runs in a dedicated paddle_env subprocess to avoid Python version conflicts.
+Default detector: classical OpenCV — measures ink density after morphological line
+removal. An optional PaddleOCR PPStructureV3 detector is available via
+method="paddle" (requires paddle_env virtualenv).
 """
 
 from __future__ import annotations
