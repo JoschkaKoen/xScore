@@ -125,6 +125,59 @@ When you run `xscore.py`, it executes these steps in order:
 | 17. Check accuracy | If a ground-truth file exists, compares and prints per-student accuracy | `shared/load_ground_truth.py` |
 | 18. Compile report | LaTeX/PDF report; skipped with `--no-report` | `reports/generate_report.py` |
 
+```mermaid
+flowchart TD
+    subgraph setup["Setup"]
+        s1["1 · Parse prompt"]
+        s2["2 · Find exam folder"]
+        s3["3 · Load roster"]
+        s4["4 · Build scaffold"]
+    end
+
+    subgraph scan["Scan cleaning"]
+        s5["5 · Detect blank pages"]
+        s6["6 · Autorotate"]
+        s7["7 · Deskew"]
+        s8["8 · Detect anchors"]
+        s9["9 · Compute transforms"]
+    end
+
+    subgraph boxes["Box processing"]
+        s10["10 · Remove vertical lines"]
+        s11["11 · Project boxes"]
+        s12["12 · Refine boxes"]
+    end
+
+    subgraph grading["Grading"]
+        s13["13 · Detect student names"]
+        s14["14 · Detect attempts"]
+        s15["15 · Mark answers"]
+    end
+
+    subgraph results["Results"]
+        s16["16 · Compile results"]
+        s17["17 · Check accuracy"]
+        s18["18 · Compile report"]
+    end
+
+    s1 --> s2 --> s3 --> s4
+    s4 --> s5
+    s5 --> s6 --> s7 --> s8 --> s9
+    s9 --> s10 --> s11 --> s12
+    s12 --> s13 --> s14 --> s15
+    s15 --> s16 --> s17 --> s18
+
+    s4  -. "1_scaffold.json\n1_exam_bboxes.pdf" .- a4[" "]:::file
+    s7  -. "3_cleaned_scan.pdf\n3_scan_anchors.json" .- a7[" "]:::file
+    s9  -. "4_scan_transforms.json" .- a9[" "]:::file
+    s10 -. "4_scan_lines_removed.pdf" .- a10[" "]:::file
+    s11 -. "5_scan_boxes_projected.pdf\n5_scan_boxes_projected.json" .- a11[" "]:::file
+    s12 -. "6_scan_boxes_refined.pdf\n6_scan_handwriting.json\n7_scan_exercise_boxes.pdf\n7_scan_exercise_boxes.json" .- a12[" "]:::file
+    s18 -. "8_grade_report.pdf" .- a18[" "]:::file
+
+    classDef file fill:#f5f5f5,stroke:#bbb,color:#555,font-size:11px
+```
+
 ---
 
 ### How the exam scaffold is built (step 4)
